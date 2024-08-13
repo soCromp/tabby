@@ -11,6 +11,7 @@ from torch.nn import CrossEntropyLoss
 from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.stopping_criteria import StoppingCriteriaList, validate_stopping_criteria
 from transformers.generation.utils import GenerateEncoderDecoderOutput, GenerateDecoderOnlyOutput
+from random import shuffle
 
 SUPERCLASS_FOR_HEADLESS_LM = {GPT2LMHeadModel:GPT2Model, LlamaForCausalLM:LlamaModel}
 
@@ -34,53 +35,6 @@ class MOEMLP(nn.Module):
     def forward(self, hidden_states):
         # print('generate with mlp', self.col.value)
         return self.mlps[self.col.value](hidden_states)
-
-
-# class MOETransformerBlock(nn.Module):
-#     def __init__(self, block):
-#         super(MOETransformerBlock, self).__init__()
-        
-#     def from_other(block):
-#         moeblock = deepcopy(block)
-#         if type(block) == GPT2Block:
-#             moeblock.input_layernorm = block.ln_1
-#             moeblock.attention = block.attn
-#             moeblock.post_attention_layernorm = block.ln_2
-#             moeblock.mlps = MOEMLP(block.mlp)
-#         elif type(block) == LlamaDecoderLayer:
-#             moeblock.input_layernorm = block.input_layernorm
-#             moeblock.attention = block.self_attn
-#             moeblock.post_attention_layernorm = block.post_attention_layernorm
-#             moeblock.mlps = MOEMLP(block.mlp)
-#         else:
-#             raise NotImplementedError(f'Type {type(block)} not supported')
-#         return moeblock
-        
-#     def forward(
-#         self,
-#         hidden_states,
-#         attention_mask,
-#         col = 0,
-#         **kwargs
-#     ):
-#         residual = hidden_states
-#         hidden_states = self.input_layernorm(hidden_states)
-        
-#         attn_outs = self.attn(
-#             hidden_states,
-#             attention_mask,
-#             **kwargs
-#         )
-#         hidden_states = attn_outs[0]
-#         hidden_states = residual + hidden_states 
-        
-#         # fully connected 
-#         residual = hidden_states 
-#         hidden_states = self.post_attention_layernorm(hidden_states)
-#         hidden_states = self.mlp(hidden_states, col)
-#         hidden_states = hidden_states + residual 
-        
-#         outputs = (hidden_states) + attn_outs[1:]
         
     
 def MOEModelForCausalLM(model, **kwargs):
@@ -126,10 +80,7 @@ def MOEModelForCausalLM(model, **kwargs):
             
         def set_generation_mode(self, token_heads=None, column_names_tokens=None):
             self.forward = self.autocol_forward
-            if token_heads==None:
-                self.token_heads = list(range(self.num_experts))
-            else:
-                self.token_heads = token_heads
+            self.token_heads = token_heads
             self.column_names_tokens = column_names_tokens
             
         
@@ -313,8 +264,16 @@ def MOEModelForCausalLM(model, **kwargs):
         ):
             # init values
             EOS = 50258
-            expert = 1 # used to index into the list saying the order of cols/experts
-            self.col.value = self.token_heads[expert]
+            expert = 0 # used to index into the list saying the order of cols/experts
+            if self.token_heads is None: 
+                token_heads = list(range(len(self.column_names_tokens)-1))
+                shuffle(token_heads)
+                token_heads = [len(self.column_names_tokens)-1] + token_heads
+                # print(token_heads)
+            else:
+                token_heads = self.token_heads
+                
+            self.col.value = token_heads[expert]
             # print(self.col.value)
             logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
             stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
@@ -368,6 +327,7 @@ def MOEModelForCausalLM(model, **kwargs):
             model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
             
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
+                # print('self.col.value', self.col.value)
                 # prepare model inputs
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -410,34 +370,11 @@ def MOEModelForCausalLM(model, **kwargs):
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
                 if input_ids[..., -1].item() == EOS and expert < self.num_experts-1:
-                    next_tokens = torch.full_like(next_tokens, self.column_names_tokens[expert][0])
                     expert += 1
-                    self.col.value = self.token_heads[expert]
-                    
-                # if next_tokens.item() == EOS and expert < self.num_experts-1:
-                #     expert += 1
-                #     self.col.value = self.token_heads[expert]
-                #     for token in self.column_names_tokens[expert]:
-                #         print(token)
-                #         model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-                #         outputs = self(
-                #             **model_inputs,
-                #             return_dict=True,
-                #             output_attentions=output_attentions,
-                #             output_hidden_states=output_hidden_states,
-                #         )
-                #         next_token_logits = outputs.logits[:, -1, :]
-                #         # pre-process distribution
-                #         # next_token_scores = get_next_token_scores(input_ids, next_token_logits, logits_processor, logits_warper)
-                #         next_tokens = torch.full_like(next_tokens, token)
-                #         print('before', input_ids.shape)
-                #         input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
-                #         print('after', input_ids.shape)
-                #         model_kwargs = self._update_model_kwargs_for_generation(
-                #             outputs,
-                #             model_kwargs,
-                #             is_encoder_decoder=self.config.is_encoder_decoder,
-                #         )
+                    self.col.value = token_heads[expert]
+                    next_tokens = torch.full_like(next_tokens, self.column_names_tokens[self.col.value][0])
+                elif input_ids[..., -1].item() == EOS and expert == self.num_experts-1: # this line is done
+                    break
 
                 # finished sentences should have their next token be a padding token
                 if eos_token_id is not None:

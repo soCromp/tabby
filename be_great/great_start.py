@@ -89,7 +89,7 @@ class CategoricalStart(GReaTStart):
 
     def get_start_tokens(self, n_samples):
         start_words = random.choices(self.population, self.weights, k=n_samples)
-        start_text = [self.start_col + " is " + str(s).strip() + ".<EOS>" for s in start_words]
+        start_text = [self.start_col + " is " + str(s).strip() + "." for s in start_words]
         start_tokens = _pad_tokens(self.tokenizer(start_text)["input_ids"])
         return start_tokens
 

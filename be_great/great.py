@@ -227,7 +227,9 @@ class GReaT:
                 list(range(conditional_ind+1, len(self.columns)))
             assert len(expert_indices) == len(self.columns) and set(expert_indices) == set(list(range(len(self.columns))))
             column_names_tokens = self.tokenizer(self.columns).input_ids
-            self.model.set_generation_mode(expert_indices, column_names_tokens)
+            self.model.set_generation_mode(None, column_names_tokens) # generate columns in random order
+            # self.model.set_generation_mode(expert_indices, column_names_tokens) # generate columns in fixed order
+            # print(self.columns)
 
         # Move model to device
         # self.model.to(device)
