@@ -18,23 +18,24 @@ SUPERCLASS_FOR_HEADLESS_LM = {GPT2LMHeadModel:GPT2Model, LlamaForCausalLM:LlamaM
 class Integer: # so I can have pointers to an int
     value = 0
 
-class MOEMLP(nn.Module):
+class MultiLayer(nn.Module): 
+    """Used for MOE MLPs and multiheads"""
     def __init__(self, col):
-        super(MOEMLP, self).__init__()
+        super(MultiLayer, self).__init__()
         self.col = col
         
     def from_other(mlp, col, num_experts):
-        moemlp = MOEMLP(col)
-        mlpslist = []
+        multilayer = MultiLayer(col)
+        layerlist = []
         for i in range(num_experts):
-            mlpslist.append(deepcopy(mlp))
-        moemlp.mlps = nn.ModuleList(mlpslist)
-        return moemlp
+            layerlist.append(deepcopy(mlp))
+        multilayer.layers = nn.ModuleList(layerlist)
+        return multilayer
         
         
     def forward(self, hidden_states):
         # print('generate with mlp', self.col.value)
-        return self.mlps[self.col.value](hidden_states)
+        return self.layers[self.col.value](hidden_states)
         
     
 def MOEModelForCausalLM(model, **kwargs):
@@ -50,7 +51,7 @@ def MOEModelForCausalLM(model, **kwargs):
             self.num_experts=1
             
             
-        def from_other(model, num_experts=1):
+        def from_other(model, num_experts=1, multihead=False):
             # https://stackoverflow.com/questions/597199/converting-an-object-into-a-subclass-in-python
             moemodel = deepcopy(model)
             moemodel.__class__ = MOEModelForCausalLM
@@ -59,18 +60,23 @@ def MOEModelForCausalLM(model, **kwargs):
             
             if type(model) == GPT2LMHeadModel:
                 for i in range(len(moemodel.transformer.h)):
-                    moemodel.transformer.h[i].mlp = MOEMLP.from_other(
+                    moemodel.transformer.h[i].mlp = MultiLayer.from_other(
                         moemodel.transformer.h[i].mlp, moemodel.col, moemodel.num_experts)
             elif type(model) == LlamaForCausalLM:
-                moemodel = deepcopy(model)
+                # moemodel = deepcopy(model)
                 print('deep copied model')
                 moemodel.__class__ = MOEModelForCausalLM
                 for i in range(len(moemodel.model.layers)):
-                    moemodel.model.layers[i].mlp = MOEMLP.from_other(
+                    moemodel.model.layers[i].mlp = MultiLayer.from_other(
                         moemodel.model.layers[i].mlp, moemodel.col, moemodel.num_experts)
                 print('added MOE MLPs')
             else:
                 raise NotImplementedError(f'Type {type(model)} not supported')
+            
+            if multihead:
+                moemodel.lm_head = MultiLayer.from_other(
+                    moemodel.lm_head, moemodel.col, moemodel.num_experts
+                )
             return moemodel
         
         
