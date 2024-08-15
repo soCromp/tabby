@@ -45,7 +45,7 @@ model.to(device)
 
 # Data stuff
 # Load the dataset
-file_path = './adult.csv'  # Update this with the correct path
+file_path = '/hdd3/sonia/be_great/data/adult/2024-08-15.11:29:17.222774/train.csv'  # Update this with the correct path
 data = pd.read_csv(file_path)
 
 # Preprocess the data: Convert each row to a string
@@ -76,11 +76,12 @@ class TextDataset(Dataset):
             tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt")
             prompt = torch.full((1,), #batch_size x token
                                 self.tokenizer.bos_token_id)
-            return prompt, tokenized_text.input_ids.squeeze()
+            return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
         else:
             text = tokenizer.bos_token + ' '.join(text)
             tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
-            return tokenized_text.input_ids.squeeze(), tokenized_text.attention_mask.squeeze()
+            return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
+                    'labels': tokenized_text.input_ids.squeeze()}
             
 
 text_data = data.apply(row_to_col_sentences, axis=1).tolist()
@@ -96,11 +97,9 @@ lossesmoe = []
 for epoch in range(1):  # Train for 1 epochs
     for batch in tqdm(dataloader):
         optimizer.zero_grad()
-        prompt, labels = batch
-        prompt = prompt.to(device)
-        labels = labels.to(device)
+        batch = {k:v.to(device) for (k,v) in batch.items()}
 
-        outputs = model(input_ids=prompt, labels=labels)
+        outputs = model(**batch)
         # outputs = model.debug_forward(ins['input_ids'].to(device), ins['attention_mask'].to(device), labels=labels)
         loss = outputs.loss
 
@@ -125,11 +124,13 @@ if multihead:
     model.set_generation_mode(column_names_tokens=column_names_tokens)
 
 samples = []
-for i in tqdm(range(10000)):
+for i in tqdm(range(10)):
     toks = model.generate(do_sample=True, num_beams=1, max_length=140, 
                           pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
     samples.append(tokenizer.batch_decode(toks)[0])
     
 with open(os.path.join(outpath, 'samples.txt'), 'w') as f:
     f.write('\n'.join(samples))
+    
+print('samples saved to', os.path.join(outpath, 'samples.txt'))
     
