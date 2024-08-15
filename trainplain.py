@@ -89,7 +89,7 @@ dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
 
 # Set up the optimizer and learning rate scheduler
-optimizer = AdamW(model.parameters(), lr=5e-6)
+optimizer = AdamW(model.parameters(), lr=5e-4)
 ins = tokenizer(tokenizer.bos_token, return_tensors='pt')
 
 lossesmoe = []
@@ -132,4 +132,6 @@ for i in tqdm(range(10000)):
     
 with open(os.path.join(outpath, 'samples.txt'), 'w') as f:
     f.write('\n'.join(samples))
+    
+print('samples saved to', os.path.join(outpath, 'samples.txt'))
     
