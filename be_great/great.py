@@ -494,7 +494,7 @@ class GReaT:
         """
         if self.multihead:
             sd = torch.load(path)
-            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.mlps' in k]))
+            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
             print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts)
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
