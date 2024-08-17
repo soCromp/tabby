@@ -163,7 +163,7 @@ class GReaT:
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
         great_ds = GReaTDataset.from_pandas(df)
-        great_ds.set_tokenizer(self.tokenizer)
+        great_ds.set_stuff(self.tokenizer, self.multihead)
 
         # Set training hyperparameters
         logging.info("Create GReaT Trainer...")

@@ -15,13 +15,15 @@ class GReaTDataset(Dataset):
         tokenizer (AutoTokenizer): Tokenizer from HuggingFace
     """
 
-    def set_tokenizer(self, tokenizer):
-        """Set the Tokenizer
+    def set_stuff(self, tokenizer, is_moe):
+        """Set the Tokenizer and whether to use MOE format
 
         Args:
             tokenizer: Tokenizer from HuggingFace
+            is_moe: whether _getitem should return the column indices as needed for MOE models
         """
         self.tokenizer = tokenizer
+        self.is_moe = is_moe
 
     def _getitem(
         self, key: tp.Union[int, slice, str], decoded: bool = True, **kwargs
@@ -41,7 +43,8 @@ class GReaTDataset(Dataset):
         # print(shuffled_text, shuffle_idx)
         
         tokenized_text = self.tokenizer(shuffled_text, padding=True)
-        tokenized_text['cols_iterator'] = shuffle_idx
+        if self.is_moe:
+            tokenized_text['cols_iterator'] = shuffle_idx
         return tokenized_text #, shuffle_idx
 
     # def _getitem(
