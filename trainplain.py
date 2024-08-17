@@ -24,6 +24,8 @@ parser = argparse.ArgumentParser(
                     epilog='Contact sonia at cromp@wisc.edu with questions!')
 parser.add_argument('-p', '--path',
                     default='./ckpts/debug', help='where to store/access model checkpoints, samples, etc')
+parser.add_argument('-d', '--dataset',
+                    default='adult', help='adult or diabetes')
 parser.add_argument('-m', '--moe', action='store_true',
                     default=False, help='whether to use a MOE model')
 parser.add_argument('-t', '--train', action='store_true',
@@ -39,7 +41,10 @@ print(args)
 print('outpath', args.path)
 
 # Load the dataset (needed even just for sampling, to get column names)
-file_path = '/hdd3/sonia/be_great/data/adult/2024-08-15.11:29:17.222774/'  # Update this with the correct path
+if args.dataset == 'adult':
+    file_path = '/home/sonia/be_great/data/adult/2024-08-16.22:02:09.948382'  # Update this with the correct path
+elif args.dataset == 'diabetes':
+    file_path = '/home/sonia/be_great/data/diabetes/2024-08-16.22:13:36.894384'
 data = pd.read_csv(os.path.join(file_path, 'train.csv'))
 
 if not args.great:
@@ -53,7 +58,8 @@ if not args.great:
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     if args.moe:
-        num_experts = 15
+        num_experts = len(data.columns)
+        print('create', num_experts, 'head moe model')
         dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, multihead=True)
         model = dgpt2copy # don't forget to change tokenizer name and optimizer too
         model.set_train_mode()
@@ -156,7 +162,7 @@ if not args.great:
 
         samples = []
         for i in tqdm(range(args.n_samples)):
-            toks = model.generate(do_sample=True, num_beams=1, max_length=140, 
+            toks = model.generate(do_sample=True, num_beams=1, max_length=250, 
                                 pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
             samples.append(tokenizer.batch_decode(toks)[0])
             if len(samples)%100 == 0:
@@ -180,7 +186,7 @@ else: #use great
         model = GReaT.load_from_dir(args.path)
         
     if args.n_samples > 0:
-        synthetic_data = model.sample(n_samples=args.n_samples, parse=not args.moe, k=1, max_length=130)
+        synthetic_data = model.sample(n_samples=args.n_samples, parse=not args.moe, k=1, max_length=250)
         synthetic_data = [l[0]+'\n' for l in synthetic_data] #remove [] around batch of 1 sample
 
         if not args.moe:
