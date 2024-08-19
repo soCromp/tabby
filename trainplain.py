@@ -17,19 +17,22 @@ import json
 from be_great import GReaT
 from sklearn.datasets import fetch_california_housing
 import re
+from shutil import copy
     
 parser = argparse.ArgumentParser(
                     prog='Train-Plain',
                     description='Basic program to train LLMs and MOE LLMs on tabular data',
                     epilog='Contact sonia at cromp@wisc.edu with questions!')
 parser.add_argument('-p', '--path',
-                    default='./ckpts/debug', help='where to store/access model checkpoints, samples, etc')
+                    default=None, help='where to store/access model checkpoints, samples, etc')
 parser.add_argument('-d', '--dataset',
                     default='adult', help='adult or diabetes')
 parser.add_argument('-m', '--moe', action='store_true',
                     default=False, help='whether to use a MOE model')
 parser.add_argument('-t', '--train', action='store_true',
-                    default=False, help='whether to train')
+                    default=False, help='whether to train: train on trainset')
+parser.add_argument('-v', '--valtrain', action='store_true',
+                    default=False, help='whether to train: train on valset (for fast debugging purposes only)')
 parser.add_argument('-g', '--great', action='store_true',
                     default=False, help='whether to use GReaT-style training/sampling')
 parser.add_argument('-n', '--n-samples', type=int,
@@ -37,15 +40,66 @@ parser.add_argument('-n', '--n-samples', type=int,
 # dataset, dgpt2 vs llama, ...
 args = parser.parse_args()
 print(args)
-    
-print('outpath', args.path)
+
+if args.train and args.valtrain:
+    raise Exception('choose only -t or -v')
+
+now = datetime.datetime.now()
+if args.path == None:
+    tiny = '-tiny' if args.valtrain else ''
+    great = 'great' if args.great else 'plain'
+    variant = 'moe' if args.moe else 'oh'
+    outpath = f'./ckpts/{args.dataset}{tiny}/{great}/{variant}/{now.month}-{now.day}({now.hour}:{now.minute})'
+print('outpath', outpath)
+os.makedirs(outpath, exist_ok=True)
 
 # Load the dataset (needed even just for sampling, to get column names)
 if args.dataset == 'adult':
-    file_path = '/home/sonia/be_great/data/adult/2024-08-16.22:02:09.948382'  # Update this with the correct path
+    file_path = '/home/sonia/be_great/data/adult/latest'  # Update this with the correct path
 elif args.dataset == 'diabetes':
-    file_path = '/home/sonia/be_great/data/diabetes/2024-08-16.22:13:36.894384'
-data = pd.read_csv(os.path.join(file_path, 'train.csv'))
+    file_path = '/home/sonia/be_great/data/diabetes/latest'
+if args.valtrain:
+    data = pd.read_csv(os.path.join(file_path, 'val.csv'))
+else:
+    data = pd.read_csv(os.path.join(file_path, 'train.csv'))
+
+if args.train:
+    copy(os.path.join(file_path, 'config.json'), os.path.join(outpath, 'dataconfig.json'))
+
+
+def parse(raws, args, file_path, outpath):
+    real = pd.read_csv(os.path.join(file_path, 'all.csv'))
+    cols  = set(real.columns)
+    
+    def parse_line(l):
+        entries = l[:-1].split('.<EOS>') # remove newline at end
+        # print(entries)
+        words = [c.split(' ') for c in entries] #'name', 'is', 'value'
+        # print(words)
+        d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
+        if set(d.keys()) == cols:
+            return d 
+        else:
+            return None
+
+    line_dicts = [parse_line(l) for l in raws]
+    line_dicts = [l for l in line_dicts if l is not None]
+    print(len(raws)-len(line_dicts), 'problem lines')
+    df = pd.DataFrame.from_records(line_dicts)
+
+    with open(os.path.join(file_path, 'config.json'), 'r') as f:
+        dataconfig = json.load(f)
+    ords = dataconfig['ords']
+
+    ordvals = {col:set(real[col].unique()) for col in ords}
+    for col in ordvals:
+        ordvals[col] = [str(val).strip() for val in ordvals[col]]
+
+    for col in ordvals:
+        df = df[df[col].isin(ordvals[col])]
+        print(col, len(df))
+        
+    df.to_csv(os.path.join(path, 'samplesclean.csv'), index=False)
 
 if not args.great:
     tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side='left')
@@ -67,12 +121,11 @@ if not args.great:
         model = dgpt2
     
     if args.train:
-        os.makedirs(args.path, exist_ok=True)
         lr = 5e-6
         epochs = 1
         config = {
             'file_path': file_path,
-            'creation_time': str(datetime.datetime.now()),
+            'creation_time': str(now),
             'lr': lr,
             'epochs': epochs,
             'args': vars(args)
@@ -139,17 +192,17 @@ if not args.great:
 
                 lossesmoe.append(loss.item())
                 if len(lossesmoe) % 1000 == 0:
-                    torch.save(model.state_dict(), os.path.join(args.path, f'{len(lossesmoe)}.pt'))
+                    torch.save(model.state_dict(), os.path.join(outpath, f'{len(lossesmoe)}.pt'))
                     try:
                         plt.close()
                     except:
                         pass
                     plt.plot(lossesmoe)
-                    plt.savefig(os.path.join(args.path, 'loss.png'))
+                    plt.savefig(os.path.join(outpath, 'loss.png'))
     if not args.train: # load in checkpoint so we can sample
-        ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(args.path) if f.endswith('.pt')] #steps where epochs saved
+        ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
         max_ckpt = max(ckpt_ints)
-        ckpt_path = os.path.join(args.path, f'{max_ckpt}.pt')
+        ckpt_path = os.path.join(outpath, f'{max_ckpt}.pt')
         print('loading from', ckpt_path)
         model.load_state_dict(torch.load(ckpt_path))
         model.to(device)
@@ -166,69 +219,69 @@ if not args.great:
                                 pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
             samples.append(tokenizer.batch_decode(toks)[0])
             if len(samples)%100 == 0:
-                with open(os.path.join(args.path, 'samples.txt'), 'a+') as f:
+                with open(os.path.join(outpath, 'samples.txt'), 'a+') as f:
                     f.write('\n'.join(samples))
                 samples = []
             
-        with open(os.path.join(args.path, 'samples.txt'), 'a+') as f:
+        with open(os.path.join(outpath, 'samples.txt'), 'a+') as f:
             f.write('\n'.join(samples))
             
-        print('samples saved to', os.path.join(args.path, 'samples.txt'))
+        print('samples saved to', os.path.join(outpath, 'samples.txt'))
         
 else: #use great
     if args.train:
         model = GReaT(llm='distilgpt2', batch_size=1,  
               epochs=1, save_steps=3225,
-              experiment_dir=args.path, multihead=args.moe)
+              experiment_dir=outpath, multihead=args.moe)
         model.fit(data)
-        model.save(args.path)
+        model.save(outpath)
     elif not args.train:
-        model = GReaT.load_from_dir(args.path)
+        model = GReaT.load_from_dir(outpath)
         
     if args.n_samples > 0:
-        synthetic_data = model.sample(n_samples=args.n_samples, parse=not args.moe, k=1, max_length=250)
+        synthetic_data = model.sample(n_samples=args.n_samples, parse=False, k=1, max_length=250)
         synthetic_data = [l[0]+'\n' for l in synthetic_data] #remove [] around batch of 1 sample
 
-        if not args.moe:
-            with open(os.path.join(args.path, 'samplesclean.csv'), 'w') as f: # pre-parsed
-                f.writelines(synthetic_data)
-        else:
-            with open(os.path.join(args.path, 'samples.txt'), 'w') as f: # not pre-parsed
-                f.writelines(synthetic_data)
-                
-            raws = [re.sub('is\?', 'is ?', raw) for raw in synthetic_data] # fix that "is ?" is decoded to "is?" by tokenizer
-                
-            # parsing
-            problem = 0
-            def parse_line(l):
-                cols = l.split('.<EOS>')
-                words = [c.split(' ') for c in cols] #'name', 'is', 'value'
-                words = [w for w in words if len(w)==3]
-                if len(words) > 15: #some models put extra stuff at the end
-                    words = words[:15]
-                if len(words) == 15:
-                    return {c[0]:c[2] for c in words}
-                else:
-                    problem += 1
-                    return {}
+        # if not args.moe:
+        #     with open(os.path.join(outpath, 'samplesclean.csv'), 'w') as f: # pre-parsed
+        #         f.writelines(synthetic_data)
+        # else:
+        with open(os.path.join(outpath, 'samples.txt'), 'w') as f: # not pre-parsed
+            f.writelines(synthetic_data)
+            
+        raws = [re.sub('is\?', 'is ?', raw) for raw in synthetic_data] # fix that "is ?" is decoded to "is?" by tokenizer
+            
+        # parsing
+        problem = 0
+        def parse_line(l):
+            cols = l.split('.<EOS>')
+            words = [c.split(' ') for c in cols] #'name', 'is', 'value'
+            words = [w for w in words if len(w)==3]
+            if len(words) > 15: #some models put extra stuff at the end
+                words = words[:15]
+            if len(words) == 15:
+                return {c[0]:c[2] for c in words}
+            else:
+                problem += 1
+                return {}
 
-            line_dicts = [parse_line(l) for l in raws]
-            df = pd.DataFrame.from_records(line_dicts)
-            print(problem, 'problem lines')
-            print(df.columns, df.shape)
+        line_dicts = [parse_line(l) for l in raws]
+        df = pd.DataFrame.from_records(line_dicts)
+        print(problem, 'problem lines')
+        print(df.columns, df.shape)
 
-            real = pd.read_csv(os.path.join(file_path, 'all.csv'))
-            with open(os.path.join(file_path, 'config.json'), 'r') as f:
-                dataconfig = json.load(f)
-            ords = dataconfig['ords']
+        real = pd.read_csv(os.path.join(file_path, 'all.csv'))
+        with open(os.path.join(file_path, 'config.json'), 'r') as f:
+            dataconfig = json.load(f)
+        ords = dataconfig['ords']
 
-            ordvals = {col:set(real[col].unique()) for col in ords}
-            for col in ordvals:
-                ordvals[col] = [val.strip() for val in ordvals[col]]
+        ordvals = {col:set(real[col].unique()) for col in ords}
+        for col in ordvals:
+            ordvals[col] = [str(val).strip() for val in ordvals[col]]
 
-            for col in ordvals:
-                df = df[df[col].isin(ordvals[col])]
-                print(col, len(df))
-                
-            df.to_csv(os.path.join(args.path, 'samplesclean.csv'), index=False)
+        for col in ordvals:
+            df = df[df[col].isin(ordvals[col])]
+            print(col, len(df))
+            
+        df.to_csv(os.path.join(outpath, 'samplesclean.csv'), index=False)
         

@@ -40,12 +40,14 @@ class GReaTDataset(Dataset):
         random.shuffle(shuffle_idx)
         
         shuffled_text = [strings[i] for i in shuffle_idx]
-        # print(shuffled_text, shuffle_idx)
+        # print(''.join(shuffled_text), shuffle_idx)
         
-        tokenized_text = self.tokenizer(shuffled_text, padding=True)
         if self.is_moe:
+            tokenized_text = self.tokenizer(shuffled_text, padding=True)
             tokenized_text['cols_iterator'] = shuffle_idx
-        return tokenized_text #, shuffle_idx
+        else:
+            tokenized_text = self.tokenizer(''.join(shuffled_text), padding=True)
+        return tokenized_text 
 
     # def _getitem(
     #     self, key: tp.Union[int, slice, str], decoded: bool = True, **kwargs
