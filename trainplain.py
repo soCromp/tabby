@@ -62,6 +62,8 @@ if args.valtrain:
     data = pd.read_csv(os.path.join(file_path, 'val.csv'))
 else:
     data = pd.read_csv(os.path.join(file_path, 'train.csv'))
+with open(os.path.join(file_path, 'config.json'), 'r') as f:
+    dataconfig = json.load(f)
 
 if args.train:
     copy(os.path.join(file_path, 'config.json'), os.path.join(outpath, 'dataconfig.json'))
@@ -169,7 +171,7 @@ if not args.great:
                     
 
         text_data = data.apply(row_to_col_sentences, axis=1).tolist()
-        dataset = TextDataset(text_data, tokenizer, max_col_length=20, do_moe_format=args.moe)
+        dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=args.moe)
         dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
 
 
@@ -215,7 +217,7 @@ if not args.great:
 
         samples = []
         for i in tqdm(range(args.n_samples)):
-            toks = model.generate(do_sample=True, num_beams=1, max_length=250, 
+            toks = model.generate(do_sample=True, num_beams=1, max_length=data_config['max_col_length']*len(data_config['cols']), 
                                 pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
             samples.append(tokenizer.batch_decode(toks)[0])
             if len(samples)%100 == 0:
@@ -239,7 +241,8 @@ else: #use great
         model = GReaT.load_from_dir(outpath)
         
     if args.n_samples > 0:
-        synthetic_data = model.sample(n_samples=args.n_samples, parse=False, k=1, max_length=250)
+        synthetic_data = model.sample(n_samples=args.n_samples, parse=False, k=1, 
+                                      max_length=data_config['max_col_length']*len(data_config['cols']))
         synthetic_data = [l[0]+'\n' for l in synthetic_data] #remove [] around batch of 1 sample
 
         # if not args.moe:
