@@ -48,6 +48,30 @@ class GReaTTrainer(Trainer):
             pin_memory=self.args.dataloader_pin_memory,
             worker_init_fn=_seed_worker,
         )
+
+    def get_eval_dataloader(self, dataset=None) -> DataLoader:
+        if dataset == None:
+            if self.eval_dataset is None:
+                raise ValueError("Trainer: eval requires an eval_dataset.")
+            else:
+                dataset = self.eval_dataset
+
+        data_collator = self.data_collator
+        eval_dataset = (
+            dataset
+        )  # self._remove_unused_columns(self.train_dataset, description="training")
+        eval_sampler = self._get_eval_sampler(dataset)
+
+        return DataLoader(
+            eval_dataset,
+            batch_size=self.args.eval_batch_size,
+            sampler=eval_sampler,
+            collate_fn=data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            worker_init_fn=_seed_worker,
+        )
         
         
     def _save_checkpoint(self, model, trial, metrics=None):
