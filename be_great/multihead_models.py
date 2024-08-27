@@ -12,6 +12,7 @@ from transformers.generation.logits_process import LogitsProcessorList
 from transformers.generation.stopping_criteria import StoppingCriteriaList, validate_stopping_criteria
 from transformers.generation.utils import GenerateEncoderDecoderOutput, GenerateDecoderOnlyOutput
 from random import shuffle
+from copy import deepcopy
 
 SUPERCLASS_FOR_HEADLESS_LM = {GPT2LMHeadModel:GPT2Model, LlamaForCausalLM:LlamaModel}
 
@@ -332,6 +333,9 @@ def MOEModelForCausalLM(model, **kwargs):
             unfinished_sequences = torch.ones(batch_size, dtype=torch.long, device=input_ids.device)
             model_kwargs["cache_position"] = torch.arange(cur_len, device=input_ids.device)
             
+            insert_column_name = False
+            column_names_tokens = deepcopy(self.column_names_tokens) # since we're popping and don't want to change original
+            
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
                 # print('self.col.value', self.col.value)
                 # prepare model inputs
@@ -378,7 +382,13 @@ def MOEModelForCausalLM(model, **kwargs):
                 if input_ids[..., -1].item() == EOS and expert < self.num_experts-1:
                     expert += 1
                     self.col.value = token_heads[expert]
-                    next_tokens = torch.full_like(next_tokens, self.column_names_tokens[self.col.value][0])
+                    next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
+                    if len(column_names_tokens[self.col.value]) > 0: # more tokens to keep inserting
+                        insert_column_name = True 
+                elif insert_column_name:
+                    next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
+                    if len(column_names_tokens[self.col.value]) == 0: # inserted this whole column name
+                        insert_column_name = False
                 elif input_ids[..., -1].item() == EOS and expert == self.num_experts-1: # this line is done
                     break
 

@@ -87,34 +87,39 @@ class GReaT:
         self.multihead = multihead
             
 
-        # if self.efficient_finetuning == "lora":
-        #     # Lazy importing
-        #     try:
-        #         from peft import (
-        #             LoraConfig,
-        #             get_peft_model,
-        #             prepare_model_for_kbit_training,
-        #             TaskType,
-        #         )
-        #     except ImportError:
-        #         raise ImportError(
-        #             "This function requires the 'peft' package. Please install it with - pip install peft"
-        #         )
+        if self.efficient_finetuning == "lora":
+            # Lazy importing
+            try:
+                from peft import (
+                    LoraConfig,
+                    get_peft_model,
+                    prepare_model_for_kbit_training,
+                    TaskType,
+                )
+            except ImportError:
+                raise ImportError(
+                    "This function requires the 'peft' package. Please install it with - pip install peft"
+                )
 
-        #     # Define LoRA Config
-        #     lora_config = LoraConfig(
-        #         r=16,  # only training 0.16% of the parameters of the model
-        #         lora_alpha=32,
-        #         target_modules='all-linear',
-        #         lora_dropout=0.05,
-        #         bias="none",
-        #         task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
-        #     )
-        #     # prepare int-8 model for training
-        #     self.model = prepare_model_for_kbit_training(self.model)
-        #     # add LoRA adaptor
-        #     self.model = get_peft_model(self.model, lora_config)
-        #     self.model.print_trainable_parameters()
+            # Define LoRA Config
+            lora_config = LoraConfig(
+                r=1,  
+                lora_alpha=256,
+                target_modules='all-linear',
+                lora_dropout=0.05,
+                bias="none",
+                task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+            )
+            def apply_efficient_finetuning():
+                # prepare int-8 model for training
+                self.model = prepare_model_for_kbit_training(self.model)
+                # add LoRA adaptor
+                self.model = get_peft_model(self.model, lora_config)
+                self.model.print_trainable_parameters()
+                print('applying lora, model type now', type(self.model))
+            self.efficient_finetuning_func = apply_efficient_finetuning
+        else: 
+            self.efficient_finetuning_func = None
 
         # Set the training hyperparameters
         self.experiment_dir = experiment_dir
@@ -159,6 +164,9 @@ class GReaT:
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
             num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
             self.model.resize_token_embeddings(len(self.tokenizer))
+            print(df.shape[1], 'experts model')
+        if self.efficient_finetuning_func is not None:
+            self.efficient_finetuning_func()
 
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
@@ -191,7 +199,6 @@ class GReaT:
         n_samples: int,
         start_col: tp.Optional[str] = "",
         start_col_dist: tp.Optional[tp.Union[dict, list]] = None,
-        parse: bool = True,
         temperature: float = 0.7,
         k: int = 100,
         max_length: int = 100,
@@ -235,92 +242,35 @@ class GReaT:
         # self.model.to(device)
 
         # Init list for generated DataFrames
-        dfs = []
+        gen = []
 
         # Start generation process
-        with tqdm(total=n_samples) as pbar:
-            gen = []
-            already_generated = 0
-            _cnt = 0
-            # try:
-            while n_samples > already_generated:
+        for i in tqdm(range(0,n_samples,k)):
                 # if self.multihead:
                 #     self.model.set_generation_mode(self.columns)
                     
-                start_tokens = great_start.get_start_tokens(k)
-                start_tokens = torch.tensor(start_tokens).to(device)
+            start_tokens = great_start.get_start_tokens(k)
+            start_tokens = torch.tensor(start_tokens).to(device)
 
-                # Generate tokens
-                tokens = self.model.generate(
-                    input_ids=start_tokens,
-                    max_length=max_length,
-                    do_sample=True,
-                    temperature=temperature,
-                    pad_token_id=50256,
-                )
+            # Generate tokens
+            tokens = self.model.generate(
+                input_ids=start_tokens,
+                max_length=max_length,
+                do_sample=True,
+                temperature=temperature,
+                pad_token_id=50256,
+            )
 
-                # Convert tokens back to tabular data
-                text_data = _convert_tokens_to_text(tokens, self.tokenizer)
-                # print(text_data)
-                
-                if parse:
-                    df_gen = _convert_text_to_tabular_data(text_data, self.columns)
-
-                    # Remove rows where we have not generated anything
-                    df_gen = df_gen[~(df_gen == "placeholder").any(axis=1)]
-
-                    # Remove rows where all values are NaN
-                    df_gen = df_gen.dropna(how="all")
-
-                    # Optional: Remove rows with any NaN values
-                    if drop_nan:
-                        df_gen = df_gen.dropna()
-
-                    # Remove rows with flawed numerical values but keep NaNs
-                    for i_num_cols in self.num_cols:
-                        coerced_series = pd.to_numeric(
-                            df_gen[i_num_cols], errors="coerce"
-                        )
-                        df_gen = df_gen[
-                            coerced_series.notnull() | df_gen[i_num_cols].isna()
-                        ]
-
-                    # Convert numerical columns to float
-                    df_gen[self.num_cols] = df_gen[self.num_cols].astype(float)
-
-                    dfs.append(df_gen)
-                    already_generated += len(dfs[-1])
-
-                    # Update progress bar
-                    pbar.update(len(dfs[-1]))
-
-                    # Check if we are actually generating synthetic samples and if not, break everything
-                    _cnt += 1
-                    if _cnt > 13 and already_generated == 0:
-                        raise Exception("Breaking the generation loop!")
-                else:
-                    gen.append(text_data)
-                    pbar.update(len(gen))
-                    already_generated = len(gen)
-
-            # except Exception as e:
-            #     print(f"{bcolors.FAIL}An error has occurred: {str(e)}{bcolors.ENDC}")
-            #     print(
-            #         f"{bcolors.WARNING}To address this issue, consider fine-tuning the GReaT model for an longer period. This can be achieved by increasing the number of epochs.{bcolors.ENDC}"
-            #     )
-            #     print(
-            #         f"{bcolors.WARNING}Alternatively, you might consider increasing the max_length parameter within the sample function. For example: model.sample(n_samples=10, max_length=2000){bcolors.ENDC}"
-            #     )
-            #     print(
-            #         f"{bcolors.OKBLUE}If the problem persists despite these adjustments, feel free to raise an issue on our GitHub page at: https://github.com/kathrinse/be_great/issues{bcolors.ENDC}"
-            #     )
-
-        if parse:
-            df_gen = pd.concat(dfs)
-            df_gen = df_gen.reset_index(drop=True)
-            return df_gen.head(n_samples)
-        else:
-            return gen
+            # Convert tokens back to tabular data
+            text_data = _convert_tokens_to_text(tokens.cpu(), self.tokenizer)
+            
+            gen.extend(text_data)
+            # print(len(gen))
+            already_generated = len(gen)
+            
+        self.model.cpu() 
+        # print(gen)
+        return gen
 
     def great_sample(
         self,
@@ -371,7 +321,7 @@ class GReaT:
                 temperature=temperature,
                 pad_token_id=50256,
             )
-            generated_data.append(torch.squeeze(gen))
+            generated_data.append(torch.squeeze(gen).cpu())
 
         # Convert Text back to Tabular Data
         decoded_data = _convert_tokens_to_text(generated_data, self.tokenizer)
