@@ -332,3 +332,4 @@ else: #use great
         # parsing
         parse(raws, args, file_path, outpath)
         
+print(outpath)
