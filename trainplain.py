@@ -15,9 +15,10 @@ import argparse
 import datetime
 import json
 from be_great import GReaT
-from sklearn.datasets import fetch_california_housing
+from be_great.great_dataset import GReaTDataset
 import re
 from shutil import copy
+from sklearn import preprocessing, pipeline, ensemble, compose
     
 parser = argparse.ArgumentParser(
                     prog='Train-Plain',
@@ -35,9 +36,12 @@ parser.add_argument('-v', '--valtrain', action='store_true',
                     default=False, help='whether to train: train on valset (for fast debugging purposes only)')
 parser.add_argument('-g', '--great', action='store_true',
                     default=False, help='whether to use GReaT-style training/sampling')
+parser.add_argument('-lr', '--lr', type=float,
+                    default=1e-6, help='training learning rate')
 parser.add_argument('-n', '--n-samples', type=int,
                     default=10, help='number of samples to synthesize (or 0 to skip this)')
-# dataset, dgpt2 vs llama, ...
+parser.add_argument('--parse', action='store_true',
+                    help='just read in samples.txt and try to parse it- this option is for debugging purposes')
 args = parser.parse_args()
 print(args)
 
@@ -77,8 +81,10 @@ else:
     
 if args.valtrain:
     data = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
 else:
     data = pd.read_csv(os.path.join(file_path, 'train.csv'))
+    valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
 with open(os.path.join(file_path, 'config.json'), 'r') as f:
     dataconfig = json.load(f)
 
@@ -127,15 +133,49 @@ def parse(raws, args, file_path, outpath):
         
     df.to_csv(os.path.join(outpath, 'samplesclean.csv'), index=False)
 
-if not args.great:
+def eval(real, synth, outpath, datapath):
+    test = pd.read_csv(os.path.join(datapath, 'test.txt'))
+    with open(os.path.join(file_path, 'config.json'), 'r') as f:
+        dataconfig = json.load(f)
+    nums = dataconfig['nums']
+    ords = dataconfig['ords']
+    labs = dataconfig['labs']
+    
+    def create_pipeline(trainset):
+        rfc = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=rs)
+        preprocessing_pipeline = compose.ColumnTransformer([
+            ("ordinal_preprocessor", ordenc, ords),
+            ("numerical_preprocessor", numenc, nums),
+        ])
+        complete_pipeline = pipeline.Pipeline([
+            ("preprocessor", preprocessing_pipeline),
+            ("estimator", rfc)
+        ])
+        
+        preprocessed_labels = lb.fit_transform(trainset[labs].values.ravel()).ravel()
+        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
+        return complete_pipeline
+    
+    rfc = create_pipeline(synth)
+    labels = lb.fit_transform(test[labs])
+    score = rfc.score(test[ords+nums], labels)
+    print('MLE', score)
+    results['MLE'] = score 
+
+if args.parse:
+    with open(os.path.join(args.path, 'samples.txt'), 'r') as f:
+        raws = f.readlines()
+    parse(raws, args, file_path, args.path)
+
+elif not args.great:
     tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
 
-    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained('distilgpt2')
+    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained('distilgpt2', device_map='auto')
     dgpt2.resize_token_embeddings(len(tokenizer))
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     if args.moe:
         num_experts = len(data.columns)
@@ -147,19 +187,18 @@ if not args.great:
         model = dgpt2
     
     if args.train or args.valtrain:
-        lr = 5e-6
         epochs = 1
         config = {
             'file_path': file_path,
             'creation_time': str(now),
-            'lr': lr,
+            'lr': args.lr,
             'epochs': epochs,
             'args': vars(args)
         }
+        with open(os.path.join(outpath, 'config.json'), 'w') as f:
+            json.dump(config, f)
         
         model.train()
-        # Move the model to the device (GPU if available)
-        model.to(device)
 
         # Data stuff
         # Preprocess the data: Convert each row to a string
@@ -196,39 +235,23 @@ if not args.great:
 
         text_data = data.apply(row_to_col_sentences, axis=1).tolist()
         dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=args.moe)
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
-
-
-        # Set up the optimizer and learning rate scheduler
-        optimizer = AdamW(model.parameters(), lr=lr)
         
-        targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=1000,
-                                  per_device_train_batch_size=1, learning_rate=lr, num_train_epochs=epochs)
+        targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
+                                  per_device_train_batch_size=1, per_device_eval_batch_size=1, 
+                                  learning_rate=args.lr, num_train_epochs=epochs)
         trainer = Trainer(model, targs, train_dataset=dataset)
         trainer.train()
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
-
-        # lossesmoe = []
-        # for epoch in range(epochs):  
-        #     for batch in tqdm(dataloader):
-        #         optimizer.zero_grad()
-        #         batch = {k:v.to(device) for (k,v) in batch.items()}
-
-        #         outputs = model(**batch)
-        #         loss = outputs.loss
-
-        #         loss.backward()
-        #         optimizer.step()
-
-        #         lossesmoe.append(loss.item())
-        #         if len(lossesmoe) % 1000 == 0:
-                    # torch.save(model.state_dict(), os.path.join(outpath, f'{len(lossesmoe)}.pt'))
-                    # try:
-                    #     plt.close()
-                    # except:
-                    #     pass
-                    # plt.plot(lossesmoe)
-                    # plt.savefig(os.path.join(outpath, 'loss.png'))
+        
+        text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
+        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=args.moe)
+        valresult = trainer.evaluate(valdataset)
+        print('valresult', valresult)
+        config['validation_eval'] = valresult
+        with open(os.path.join(outpath, 'config.json'), 'w') as f:
+            json.dump(config, f)
+            
+        pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
     if not args.train and not args.valtrain: # load in checkpoint so we can sample
         ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
@@ -236,7 +259,7 @@ if not args.great:
         ckpt_path = os.path.join(outpath, f'{max_ckpt}.pt')
         print('loading from', ckpt_path)
         model.load_state_dict(torch.load(ckpt_path))
-        model.to(device)
+        # model.to(device)
 
     if args.n_samples > 0:
         model.eval()
@@ -244,12 +267,18 @@ if not args.great:
         if args.moe:
             token_heads = list(range( len(data.columns) ))
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
+            sbs = 1
+        else: 
+            sbs = min(100, args.n_samples)
 
+        inputs = torch.full((sbs, 1), tokenizer.bos_token_id).to(model.device)
         samples = []
-        for i in tqdm(range(args.n_samples)):
-            toks = model.generate(do_sample=True, num_beams=1, max_length=dataconfig['max_col_length']*len(dataconfig['cols']), 
+        for i in tqdm(range(0, args.n_samples, sbs)):
+            
+            toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000,#dataconfig['max_col_length']*len(dataconfig['cols']), 
                                 pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
-            samples.append(tokenizer.batch_decode(toks)[0])
+            outs = tokenizer.batch_decode(toks)
+            samples.extend(outs)
             if len(samples)%100 == 0:
                 with open(os.path.join(outpath, 'samples.txt'), 'a+') as f:
                     f.write('\n'.join(samples))
@@ -264,20 +293,31 @@ if not args.great:
 else: #use great
     if args.train or args.valtrain:
         model = GReaT(llm='distilgpt2', batch_size=1,  
-              epochs=1, save_steps=3225,
-              experiment_dir=outpath, multihead=args.moe,)
+              epochs=1, save_steps=5000,
+              experiment_dir=outpath, multihead=args.moe, lr=args.lr)
             #   efficient_finetuning='lora')
-        model.fit(data)
+        trainer = model.fit(data)
         model.save(outpath)
+        
+        great_valds = GReaTDataset.from_pandas(valdata)
+        great_valds.set_stuff(model.tokenizer, args.moe) 
+        valresult = trainer.evaluate(great_valds)
+        print('valresult', valresult)
+        with open(os.path.join(outpath, 'validationeval.json'), 'w') as f:
+            json.dump(valresult, f)
+            
+        pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     elif not args.train and not args.valtrain:
         model = GReaT.load_from_dir(outpath)
         
     if args.n_samples > 0:
         sbs = 100 #sample batch size
+        max_length = dataconfig['max_col_length']*len(dataconfig['cols'])
         if args.moe:
             sbs = 1
+            max_length = 1000 #since moe stops on its own
         synthetic_data = model.sample(n_samples=args.n_samples, k=sbs, 
-                                      max_length=1000)#dataconfig['max_col_length']*len(dataconfig['cols']))
+                                      max_length=max_length)
         synthetic_data = [l+'\n' for l in synthetic_data] #add newlines
 
         # if not args.moe:
