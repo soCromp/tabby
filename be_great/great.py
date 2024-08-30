@@ -53,7 +53,8 @@ class GReaT:
         num_cols (list): List of all numerical features/columns of the tabular dataset
         conditional_col (str): Name of a feature/column on which the sampling can be conditioned
         conditional_col_dist (dict | list): Distribution of the feature/column specified by condtional_col
-        multihead (bool): Whether to use MOE
+        moe (bool): Whether to use MOE
+        multihead (bool): Whether to make model multiheaded
     """
 
     def __init__(
@@ -63,6 +64,7 @@ class GReaT:
         epochs: int = 100,
         batch_size: int = 8,
         efficient_finetuning: str = "",
+        moe = False,
         multihead = False,
         **train_kwargs,
     ):
@@ -74,6 +76,8 @@ class GReaT:
             epochs: Number of epochs to fine-tune the model
             batch_size: Batch size used for fine-tuning
             efficient_finetuning: Indication of fune-tuning method
+            moe: whether to train MOE model 
+            multihead: whether to train multiheaded model
             train_kwargs: Additional hyperparameters added to the TrainingArguments used by the HuggingFaceLibrary,
              see here the full list of all possible values
              https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
@@ -84,6 +88,7 @@ class GReaT:
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm)
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto')
+        self.moe = moe
         self.multihead = multihead
             
 
@@ -158,20 +163,23 @@ class GReaT:
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
         
-        if self.multihead:
-            self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1])
-            self.model.set_train_mode()
+        if self.moe or self.multihead:
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
             num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
             self.model.resize_token_embeddings(len(self.tokenizer))
+            self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1], 
+                                             moe=self.moe, multihead=self.multihead)
+            self.model.set_train_mode()
             print(df.shape[1], 'experts model')
+            print(self.model)
         if self.efficient_finetuning_func is not None:
             self.efficient_finetuning_func()
 
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
         great_ds = GReaTDataset.from_pandas(df)
-        great_ds.set_stuff(self.tokenizer, self.multihead)
+        moe_or_multihead = self.moe or self.multihead
+        great_ds.set_stuff(self.tokenizer, moe_or_multihead)
 
         # Set training hyperparameters
         logging.info("Create GReaT Trainer...")
@@ -228,7 +236,7 @@ class GReaT:
         """
             
         great_start = self._get_start_sampler(start_col, start_col_dist)
-        if self.multihead:
+        if self.moe or self.multihead:
             conditional_ind = self.columns.index(self.conditional_col)
             expert_indices = [conditional_ind] + list(range(conditional_ind)) +\
                 list(range(conditional_ind+1, len(self.columns)))
@@ -246,8 +254,6 @@ class GReaT:
 
         # Start generation process
         for i in tqdm(range(0,n_samples,k)):
-                # if self.multihead:
-                #     self.model.set_generation_mode(self.columns)
                     
             start_tokens = great_start.get_start_tokens(k)
             start_tokens = torch.tensor(start_tokens).to(device)
@@ -442,14 +448,15 @@ class GReaT:
         Args:
             path: Path to the fine-tuned model
         """
-        if self.multihead:
-            sd = torch.load(path)
-            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
-            print(num_experts, 'experts model')
-            self.model = MOEModelForCausalLM(self.model, num_experts=num_experts)
+        if self.moe or self.multihead:
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
             num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
             self.model.resize_token_embeddings(len(self.tokenizer))
+            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
+            print(num_experts, 'experts model')
+            self.model = MOEModelForCausalLM(self.model, num_experts=num_experts, 
+                                             moe=self.moe, multihead=self.multihead)
+            sd = torch.load(path)
             self.model.load_state_dict(sd)
         else:
             self.model.load_state_dict(torch.load(path))

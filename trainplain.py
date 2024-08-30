@@ -298,9 +298,10 @@ elif not args.great:
 else: #use great
     if args.train or args.valtrain:
         model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
-              epochs=1, save_steps=5000,
-              experiment_dir=outpath, multihead=args.moe, learning_rate=args.lr)
-            #   efficient_finetuning='lora')
+              epochs=1, save_steps=5000, experiment_dir=outpath, 
+              moe=args.moe, multihead=args.mh, learning_rate=args.lr)
+            #   efficient_finetuning='lora')\
+        print(model.model)
         trainer = model.fit(data)
         model.save(outpath)
         
@@ -318,7 +319,7 @@ else: #use great
     if args.n_samples > 0:
         sbs = 100 #sample batch size
         max_length = dataconfig['max_col_length']*len(dataconfig['cols'])
-        if args.moe:
+        if args.moe or args.mh:
             sbs = 1
             max_length = 1000 #since moe stops on its own
         synthetic_data = model.sample(n_samples=args.n_samples, k=sbs, 
