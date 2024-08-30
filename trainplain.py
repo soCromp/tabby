@@ -179,7 +179,7 @@ elif not args.great:
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
-    if args.moe:
+    if args.moe or args.mh:
         num_experts = len(data.columns)
         print('create', num_experts, 'head moe model')
         dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, moe=args.moe, multihead=args.mh)
@@ -187,6 +187,8 @@ elif not args.great:
         model.set_train_mode()
     else:
         model = dgpt2
+        
+    print(model)
     
     if args.train or args.valtrain:
         epochs = 1
@@ -236,7 +238,8 @@ elif not args.great:
                     
 
         text_data = data.apply(row_to_col_sentences, axis=1).tolist()
-        dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=args.moe)
+        do_moe_format = args.moe or args.mh
+        dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
@@ -246,7 +249,7 @@ elif not args.great:
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
         text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
-        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=args.moe)
+        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         valresult = trainer.evaluate(valdataset)
         print('valresult', valresult)
         config['validation_eval'] = valresult
@@ -266,7 +269,7 @@ elif not args.great:
     if args.n_samples > 0:
         model.eval()
         column_names_tokens = tokenizer(list(data.columns)).input_ids
-        if args.moe:
+        if args.moe or args.mh:
             token_heads = list(range( len(data.columns) ))
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
             sbs = 1
