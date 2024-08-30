@@ -256,9 +256,9 @@ elif not args.great:
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
     if not args.train and not args.valtrain: # load in checkpoint so we can sample
-        ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
-        max_ckpt = max(ckpt_ints)
-        ckpt_path = os.path.join(outpath, f'{max_ckpt}.pt')
+        # ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
+        # max_ckpt = max(ckpt_ints)
+        ckpt_path = os.path.join(outpath, 'model.pt')
         print('loading from', ckpt_path)
         model.load_state_dict(torch.load(ckpt_path))
         # model.to(device)
