@@ -52,27 +52,28 @@ def MOEModelForCausalLM(model, **kwargs):
             self.num_experts=1
             
             
-        def from_other(model, num_experts=1, multihead=False):
+        def from_other(model, num_experts=1, moe=False, multihead=False):
             # https://stackoverflow.com/questions/597199/converting-an-object-into-a-subclass-in-python
             moemodel = deepcopy(model)
             moemodel.__class__ = MOEModelForCausalLM
             moemodel.col = Integer()
             moemodel.num_experts = num_experts
             
-            if type(model) == GPT2LMHeadModel:
-                for i in range(len(moemodel.transformer.h)):
-                    moemodel.transformer.h[i].mlp = MultiLayer.from_other(
-                        moemodel.transformer.h[i].mlp, moemodel.col, moemodel.num_experts)
-            elif type(model) == LlamaForCausalLM:
-                # moemodel = deepcopy(model)
-                print('deep copied model')
-                moemodel.__class__ = MOEModelForCausalLM
-                for i in range(len(moemodel.model.layers)):
-                    moemodel.model.layers[i].mlp = MultiLayer.from_other(
-                        moemodel.model.layers[i].mlp, moemodel.col, moemodel.num_experts)
-                print('added MOE MLPs')
-            else:
-                raise NotImplementedError(f'Type {type(model)} not supported')
+            if moe:
+                if type(model) == GPT2LMHeadModel:
+                    for i in range(len(moemodel.transformer.h)):
+                        moemodel.transformer.h[i].mlp = MultiLayer.from_other(
+                            moemodel.transformer.h[i].mlp, moemodel.col, moemodel.num_experts)
+                elif type(model) == LlamaForCausalLM:
+                    # moemodel = deepcopy(model)
+                    print('deep copied model')
+                    moemodel.__class__ = MOEModelForCausalLM
+                    for i in range(len(moemodel.model.layers)):
+                        moemodel.model.layers[i].mlp = MultiLayer.from_other(
+                            moemodel.model.layers[i].mlp, moemodel.col, moemodel.num_experts)
+                    print('added MOE MLPs')
+                else:
+                    raise NotImplementedError(f'Type {type(model)} not supported')
             
             if multihead:
                 moemodel.lm_head = MultiLayer.from_other(

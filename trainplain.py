@@ -30,6 +30,8 @@ parser.add_argument('-d', '--dataset',
                     default=None, help='adult or diabetes')
 parser.add_argument('-m', '--moe', action='store_true',
                     default=False, help='whether to use a MOE model')
+parser.add_argument('-mh', '--mh', action='store_true',
+                    default=False, help='whether to use a Multi-Head model')
 parser.add_argument('-t', '--train', action='store_true',
                     default=False, help='whether to train: train on trainset')
 parser.add_argument('-v', '--valtrain', action='store_true',
@@ -180,7 +182,7 @@ elif not args.great:
     if args.moe:
         num_experts = len(data.columns)
         print('create', num_experts, 'head moe model')
-        dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, multihead=True)
+        dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, moe=args.moe, multihead=args.mh)
         model = dgpt2copy # don't forget to change tokenizer name and optimizer too
         model.set_train_mode()
     else:
