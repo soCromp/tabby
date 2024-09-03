@@ -15,7 +15,8 @@ import argparse
 import datetime
 import json
 from be_great import GReaT
-from be_great.great_dataset import GReaTDataset
+from be_great.great_dataset import GReaTDataset, GReaTDataCollator
+from be_great.great_trainer import GReaTTrainer
 import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
@@ -44,6 +45,8 @@ parser.add_argument('-n', '--n-samples', type=int,
                     default=10, help='number of samples to synthesize (or 0 to skip this)')
 parser.add_argument('--parse', action='store_true',
                     help='just read in samples.txt and try to parse it- this option is for debugging purposes')
+parser.add_argument('---validation', '--validation', action='store_true',
+                    help='just run the validation- for debugging purposes')
 args = parser.parse_args()
 print(args)
 
@@ -258,13 +261,16 @@ elif not args.great:
             
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
-    if not args.train and not args.valtrain: # load in checkpoint so we can sample
+    if not args.train and not args.valtrain: # load in checkpoint so we can validate or sample
         # ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
         # max_ckpt = max(ckpt_ints)
         ckpt_path = os.path.join(outpath, 'model.pt')
         print('loading from', ckpt_path)
         model.load_state_dict(torch.load(ckpt_path))
         # model.to(device)
+        
+    if args.validation:
+        raise NotImplementedError()
 
     if args.n_samples > 0:
         model.eval()
@@ -293,15 +299,15 @@ elif not args.great:
             f.write('\n'.join(samples))
             
         print('samples saved to', os.path.join(outpath, 'samples.txt'))
+        samples = [s+'\n' for s in samples]
         parse(samples, args, file_path, outpath)
         
 else: #use great
     if args.train or args.valtrain:
         model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
-              epochs=1, save_steps=5000, experiment_dir=outpath, 
-              moe=args.moe, multihead=args.mh, learning_rate=args.lr)
-            #   efficient_finetuning='lora')\
-        print(model.model)
+              epochs=1, save_steps=5000,
+              experiment_dir=outpath, multihead=args.moe, learning_rate=args.lr)
+            #   efficient_finetuning='lora')
         trainer = model.fit(data)
         model.save(outpath)
         
@@ -316,10 +322,32 @@ else: #use great
     elif not args.train and not args.valtrain:
         model = GReaT.load_from_dir(outpath)
         
+    if args.validation:
+        training_args = TrainingArguments(
+            model.experiment_dir,
+            num_train_epochs=model.epochs,
+            per_device_train_batch_size=model.batch_size,
+            **model.train_hyperparameters,
+        )
+        great_valds = GReaTDataset.from_pandas(valdata)
+        great_valds.set_stuff(model.tokenizer, args.moe) 
+        trainer = GReaTTrainer(
+            model.model,
+            training_args,
+            train_dataset=great_valds,
+            tokenizer=model.tokenizer,
+            data_collator=GReaTDataCollator(model.tokenizer),
+        )
+        valresult = trainer.evaluate(great_valds)
+        print('valresult', valresult)
+        with open(os.path.join(outpath, 'validationeval.json'), 'w') as f:
+            json.dump(valresult, f)
+        pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses_val.csv'))
+        
     if args.n_samples > 0:
         sbs = 100 #sample batch size
         max_length = dataconfig['max_col_length']*len(dataconfig['cols'])
-        if args.moe or args.mh:
+        if args.moe:
             sbs = 1
             max_length = 1000 #since moe stops on its own
         synthetic_data = model.sample(n_samples=args.n_samples, k=sbs, 

@@ -452,11 +452,14 @@ class GReaT:
             special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
             num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
             self.model.resize_token_embeddings(len(self.tokenizer))
-            num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
+            sd = torch.load(path)
+            if self.moe:
+                num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
+            elif self.multihead:
+                num_experts = len(set([int(k.split('.')[-2]) for k in sd.keys() if 'lm_head.layers' in k]))
             print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts, 
                                              moe=self.moe, multihead=self.multihead)
-            sd = torch.load(path)
             self.model.load_state_dict(sd)
         else:
             self.model.load_state_dict(torch.load(path))
