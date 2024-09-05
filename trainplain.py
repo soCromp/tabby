@@ -347,7 +347,7 @@ else: #use great
     if args.n_samples > 0:
         sbs = 100 #sample batch size
         max_length = dataconfig['max_col_length']*len(dataconfig['cols'])
-        if args.moe:
+        if args.moe or args.mh:
             sbs = 1
             max_length = 1000 #since moe stops on its own
         synthetic_data = model.sample(n_samples=args.n_samples, k=sbs, 
