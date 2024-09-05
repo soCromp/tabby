@@ -102,7 +102,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split('.<EOS>') # remove newline at end
+        entries = l[:-1].split('<EOS>') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -306,7 +306,7 @@ else: #use great
     if args.train or args.valtrain:
         model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
               epochs=1, save_steps=5000,
-              experiment_dir=outpath, multihead=args.moe, learning_rate=args.lr)
+              experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr)
             #   efficient_finetuning='lora')
         trainer = model.fit(data)
         model.save(outpath)
