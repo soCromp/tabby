@@ -3,6 +3,7 @@ import numpy as np
 import sys 
 import json 
 from sklearn import preprocessing, pipeline, ensemble, compose
+from sklearn.metrics import *
 
 configpath = sys.argv[-1]
 with open(configpath) as f:
@@ -15,8 +16,8 @@ d = {}
 d['real'] = pd.read_csv(f'./data/{config["dataset"]}/latest/test.csv')
 config.pop('dataset')
 
-for name, path in config.items():
-    d[name] = pd.read_csv(path)
+for name, paths in config.items():
+    d[name] = pd.read_csv(paths[0])
 
 
 nums = dataconfig['nums']
@@ -30,7 +31,9 @@ def to_float_or_nan(value):
     except ValueError:
         return np.nan
     
-labvals = set([l.strip() for l in d['real'][labs[0]].unique()])
+if dataconfig['task'] == 'classification':
+    labvals = set([l.strip() for l in d['real'][labs[0]].unique()])
+    
 for (k, df) in d.items():
     # remove extra spaces around strings, eg ' dog' -> 'dog'
     df = df.map(lambda x: x.strip() if type(x) == str else x)
@@ -38,7 +41,13 @@ for (k, df) in d.items():
         categoriesdict[col] = categoriesdict.get(col, []) + df[col].unique().tolist()
     
     df.loc[:,nums] = df.loc[:,nums].map(to_float_or_nan)
-    df = df[df[labs[0]].isin(labvals)]
+    
+    if dataconfig['task'] == 'classification':
+        df = df[df[labs[0]].isin(labvals)]
+    else:
+        df.loc[:,labs[0]] = df.loc[:,labs[0]].map(to_float_or_nan)
+        df = df[~df.isna()[labs[0]]]
+        
     print(k, '\t\t', len(df))
     d[k] = df
 
@@ -47,28 +56,56 @@ for col in ords:
     categories.append(list(set(categoriesdict[col])))
 ordenc = preprocessing.OrdinalEncoder(categories=categories)
 numenc = preprocessing.StandardScaler()
-lb = preprocessing.LabelBinarizer()
 
-def create_pipeline(trainset):
-    rfc = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=dataconfig['random_state'])
-    preprocessing_pipeline = compose.ColumnTransformer([
-        ("ordinal_preprocessor", ordenc, ords),
-        ("numerical_preprocessor", numenc, nums),
-    ])
-    complete_pipeline = pipeline.Pipeline([
-        ("preprocessor", preprocessing_pipeline),
-        ("estimator", rfc)
-    ])
+if dataconfig['task'] == 'classification':
+    lb = preprocessing.LabelBinarizer()
+
+    def create_classification_pipeline(trainset):
+        rfc = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=dataconfig['random_state'])
+        preprocessing_pipeline = compose.ColumnTransformer([
+            ("ordinal_preprocessor", ordenc, ords),
+            ("numerical_preprocessor", numenc, nums),
+        ])
+        complete_pipeline = pipeline.Pipeline([
+            ("preprocessor", preprocessing_pipeline),
+            ("estimator", rfc)
+        ])
+        
+        preprocessed_labels = lb.fit_transform(trainset[labs[0]]).ravel()
+        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
+        return complete_pipeline
+
+    real = d['real']
+    labels = lb.fit_transform(real[labs[0]])
+
+    for k, df in d.items():
+        rfc = create_classification_pipeline(df)
+        score = rfc.score(real[ords+nums], labels)
+        print(k, '\t\t', score)
+
+else:
+    print('here')
+    def create_regression_pipeline(trainset):
+        rfc = ensemble.RandomForestRegressor(n_estimators=100, random_state=dataconfig['random_state'])
+        preprocessing_pipeline = compose.ColumnTransformer([
+            ("ordinal_preprocessor", ordenc, ords),
+            ("numerical_preprocessor", numenc, nums),
+        ])
+        complete_pipeline = pipeline.Pipeline([
+            ("preprocessor", preprocessing_pipeline),
+            ("estimator", rfc)
+        ])
+        
+        preprocessed_labels = trainset[labs[0]]
+        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
+        return complete_pipeline
     
-    preprocessed_labels = lb.fit_transform(trainset['income']).ravel()
-    complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
-    return complete_pipeline
-
-real = d['real']
-labels = lb.fit_transform(real['income'])
-
-for k, df in d.items():
-    rfc = create_pipeline(df)
-    score = rfc.score(real[ords+nums], labels)
-    print(k, '\t\t', score)
-
+    real = d['real']
+    labels = real[labs[0]]
+    
+    for k, df in d.items():
+        rfc = create_regression_pipeline(df)
+        # score = rfc.score(real[ords+nums], labels)
+        y_pred = rfc.predict(real[ords+nums])
+        score = mean_squared_error(y_pred, labels) / len(labels)
+        print(k, '\t\t', score)
