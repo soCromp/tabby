@@ -279,9 +279,9 @@ elif not args.great:
         
 else: #use great
     if args.train or args.valtrain:
-        model = GReaT(llm='distilgpt2', batch_size=32,# per_device_eval_batch_size=1,
+        model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
-              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True)#learning_rate=args.lr)
+              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr)
             #   efficient_finetuning='lora')
         trainer = model.fit(data, conditional_col=dataconfig['labs'][0])
         model.save(outpath)
