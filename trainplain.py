@@ -102,7 +102,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split('.<EOS>') # remove newline at end
+        entries = l[:-1].split('<EOS>') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -185,7 +185,7 @@ elif not args.great:
         # Data stuff
         # Preprocess the data: Convert each row to a string
         def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + '.<EOS>' for col, val in zip(row.index, row.values)]
+            return [str(col).strip() + " is " + str(val).strip() + '<EOS>' for col, val in zip(row.index, row.values)]
 
         class TextDataset(Dataset):
             def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
@@ -229,7 +229,7 @@ elif not args.great:
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
                                   save_total_limit = 5, metric_for_best_model='eval_loss',)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
-                                  callbacks = [EarlyStoppingCallback(early_stopping_threshold=0.02)])
+                                  callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train()
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         

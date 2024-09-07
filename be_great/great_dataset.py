@@ -34,7 +34,7 @@ class GReaTDataset(Dataset):
         """
         # If int, what else?
         row = self._data.fast_slice(key, 1)
-        strings = [f'{str(k).strip()} is {str(row[k][0].as_py()).strip()}.<EOS>' for k in row.column_names]
+        strings = [f'{str(k).strip()} is {str(row[k][0].as_py()).strip()}<EOS>' for k in row.column_names]
 
         shuffle_idx = list(range(row.shape[1])) # number of columns
         random.shuffle(shuffle_idx)

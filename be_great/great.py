@@ -164,10 +164,11 @@ class GReaT:
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
         
+        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+        num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+        self.model.resize_token_embeddings(len(self.tokenizer))
+            
         if self.moe or self.multihead:
-            special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
-            num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
-            self.model.resize_token_embeddings(len(self.tokenizer))
             self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1], 
                                              moe=self.moe, multihead=self.multihead)
             self.model.set_train_mode()
@@ -202,7 +203,7 @@ class GReaT:
             eval_dataset=eval_dataset,
             tokenizer=self.tokenizer,
             data_collator=GReaTDataCollator(self.tokenizer),
-            callbacks = [EarlyStoppingCallback(early_stopping_threshold=0.02)]
+            callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)]
         )
 
         # Start training
@@ -456,10 +457,11 @@ class GReaT:
         Args:
             path: Path to the fine-tuned model
         """
+        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+        num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+        self.model.resize_token_embeddings(len(self.tokenizer))
+        
         if self.moe or self.multihead:
-            special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
-            num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
-            self.model.resize_token_embeddings(len(self.tokenizer))
             sd = torch.load(path)
             if self.moe:
                 num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
