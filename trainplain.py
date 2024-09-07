@@ -102,7 +102,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split('<EOS>') # remove newline at end
+        entries = l[:-1].split('.<EOS>') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
