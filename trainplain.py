@@ -5,7 +5,7 @@ from be_great.multihead_models import MOEModelForCausalLM
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, Trainer, TrainingArguments
+from transformers import AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
 from matplotlib import pyplot as plt
@@ -169,7 +169,7 @@ elif not args.great:
     print(model)
     
     if args.train or args.valtrain:
-        epochs = 1
+        epochs = 50
         config = {
             'file_path': file_path,
             'creation_time': str(now),
@@ -185,7 +185,7 @@ elif not args.great:
         # Data stuff
         # Preprocess the data: Convert each row to a string
         def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + '<EOS>' for col, val in zip(row.index, row.values)]
+            return [str(col).strip() + " is " + str(val).strip() + '.<EOS>' for col, val in zip(row.index, row.values)]
 
         class TextDataset(Dataset):
             def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
@@ -219,15 +219,20 @@ elif not args.great:
         do_moe_format = args.moe or args.mh
         dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         
+        text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
+        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
+        
+        
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
-                                  learning_rate=args.lr, num_train_epochs=epochs)
-        trainer = Trainer(model, targs, train_dataset=dataset)
+                                  learning_rate=args.lr, num_train_epochs=epochs,
+                                  load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
+                                  save_total_limit = 5, metric_for_best_model='eval_loss',)
+        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
+                                  callbacks = [EarlyStoppingCallback(early_stopping_threshold=0.02)])
         trainer.train()
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
-        text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
-        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         valresult = trainer.evaluate(valdataset)
         print('valresult', valresult)
         config['validation_eval'] = valresult
@@ -279,12 +284,16 @@ elif not args.great:
         
 else: #use great
     if args.train or args.valtrain:
+        
         model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
-              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr)
+              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
+                load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
+                save_total_limit = 5, metric_for_best_model='eval_loss',)
             #   efficient_finetuning='lora')
-        trainer = model.fit(data, conditional_col=dataconfig['labs'][0])
+        trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0])
         model.save(outpath)
+        
         
         great_valds = GReaTDataset.from_pandas(valdata)
         great_valds.set_stuff(model.tokenizer, args.moe) 

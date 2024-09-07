@@ -10,7 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, EarlyStoppingCallback
 
 from be_great.great_dataset import GReaTDataset, GReaTDataCollator
 from be_great.great_start import (
@@ -141,6 +141,7 @@ class GReaT:
     def fit(
         self,
         data: tp.Union[pd.DataFrame, np.ndarray],
+        eval_dataset: tp.Optional = None,
         column_names: tp.Optional[tp.List[str]] = None,
         conditional_col: tp.Optional[str] = None,
         resume_from_checkpoint: tp.Union[bool, str] = False,
@@ -189,12 +190,19 @@ class GReaT:
             per_device_train_batch_size=self.batch_size,
             **self.train_hyperparameters,
         )
+        if eval_dataset is None:
+            eval_dataset = great_ds
+        else:
+            eval_dataset = GReaTDataset.from_pandas(eval_dataset)
+            eval_dataset.set_stuff(self.tokenizer, moe_or_multihead) 
         great_trainer = GReaTTrainer(
             self.model,
             training_args,
             train_dataset=great_ds,
+            eval_dataset=eval_dataset,
             tokenizer=self.tokenizer,
             data_collator=GReaTDataCollator(self.tokenizer),
+            callbacks = [EarlyStoppingCallback(early_stopping_threshold=0.02)]
         )
 
         # Start training
