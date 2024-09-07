@@ -45,7 +45,7 @@ parser.add_argument('-n', '--n-samples', type=int,
                     default=10, help='number of samples to synthesize (or 0 to skip this)')
 parser.add_argument('--parse', action='store_true',
                     help='just read in samples.txt and try to parse it- this option is for debugging purposes')
-parser.add_argument('---validation', '--validation', action='store_true',
+parser.add_argument('-validation', '--validation', action='store_true',
                     help='just run the validation- for debugging purposes')
 args = parser.parse_args()
 print(args)
@@ -106,7 +106,11 @@ def parse(raws, args, file_path, outpath):
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
-        d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
+        d = dict()
+        for c in words:
+            if c[0] in cols and len(c) == 3 and c[0] not in d: # keep only first occurence
+                d[c[0]] = c[2]
+        # d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
 
         if set(d.keys()) == cols:
             return d 
@@ -137,35 +141,6 @@ def parse(raws, args, file_path, outpath):
             return
         
     df.to_csv(os.path.join(outpath, 'samplesclean.csv'), index=False)
-
-def eval(real, synth, outpath, datapath):
-    test = pd.read_csv(os.path.join(datapath, 'test.txt'))
-    with open(os.path.join(file_path, 'config.json'), 'r') as f:
-        dataconfig = json.load(f)
-    nums = dataconfig['nums']
-    ords = dataconfig['ords']
-    labs = dataconfig['labs']
-    
-    def create_pipeline(trainset):
-        rfc = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=rs)
-        preprocessing_pipeline = compose.ColumnTransformer([
-            ("ordinal_preprocessor", ordenc, ords),
-            ("numerical_preprocessor", numenc, nums),
-        ])
-        complete_pipeline = pipeline.Pipeline([
-            ("preprocessor", preprocessing_pipeline),
-            ("estimator", rfc)
-        ])
-        
-        preprocessed_labels = lb.fit_transform(trainset[labs].values.ravel()).ravel()
-        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
-        return complete_pipeline
-    
-    rfc = create_pipeline(synth)
-    labels = lb.fit_transform(test[labs])
-    score = rfc.score(test[ords+nums], labels)
-    print('MLE', score)
-    results['MLE'] = score 
 
 if args.parse:
     with open(os.path.join(args.path, 'samples.txt'), 'r') as f:
@@ -210,7 +185,7 @@ elif not args.great:
         # Data stuff
         # Preprocess the data: Convert each row to a string
         def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + '.<EOS>' for col, val in zip(row.index, row.values)]
+            return [str(col).strip() + " is " + str(val).strip() + '<EOS>' for col, val in zip(row.index, row.values)]
 
         class TextDataset(Dataset):
             def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
@@ -304,11 +279,11 @@ elif not args.great:
         
 else: #use great
     if args.train or args.valtrain:
-        model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
-              epochs=1, save_steps=5000,
-              experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr)
+        model = GReaT(llm='distilgpt2', batch_size=32,# per_device_eval_batch_size=1,
+              epochs=50, save_steps=5000,
+              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True)#learning_rate=args.lr)
             #   efficient_finetuning='lora')
-        trainer = model.fit(data)
+        trainer = model.fit(data, conditional_col=dataconfig['labs'][0])
         model.save(outpath)
         
         great_valds = GReaTDataset.from_pandas(valdata)
