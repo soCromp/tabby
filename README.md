@@ -1,4 +1,4 @@
-![tabby logo](imgs/logo3.png "Tabby")
+<img src="imgs/logo3.png" alt="logo" width="50%"/>
 
 Based off the [Great](https://github.com/kathrinse/be_great) repository.
 
