@@ -91,9 +91,19 @@ else:
 if args.valtrain:
     data = pd.read_csv(os.path.join(file_path, 'val.csv'))
     valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    alldata = None
+    # used *uniquely* for making sure all possible values are encoded
+    # with tabula:
+    if args.ec:
+        alldata = pd.read_csv(os.path.join(file_path, 'all.csv')) 
 else:
     data = pd.read_csv(os.path.join(file_path, 'train.csv'))
     valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    alldata = None
+    # used *uniquely* for making sure all possible values are encoded
+    # with tabula:
+    if args.ec:
+        alldata = pd.read_csv(os.path.join(file_path, 'all.csv')) 
 with open(os.path.join(file_path, 'config.json'), 'r') as f:
     dataconfig = json.load(f)
 
@@ -105,6 +115,57 @@ if args.pre:
 else:
     modelname = 'distilgpt2'
 
+def make_label_encoders(data, categorical_columns):
+    label_encoder_list = []
+    for column_index, column in enumerate(data.columns):
+        if column in categorical_columns:
+            label_encoder = preprocessing.LabelEncoder()
+            data[column] = data[column].astype(str)
+            label_encoder.fit(data[column])
+            current_label_encoder = dict()
+            current_label_encoder['column'] = column
+            current_label_encoder['label_encoder'] = label_encoder
+            label_encoder_list.append(current_label_encoder)
+    return label_encoder_list
+            
+def encode_categorical_columns(data, label_encoder_list): 
+    # pass the dataframe of data to encode and label_encoder_list
+    for i in range(len(label_encoder_list)):
+        label_encoder = label_encoder_list[i]['label_encoder']
+        column_name = label_encoder_list[i]['column']
+        
+        transformed_column = label_encoder.transform(data[column_name])
+        data[column_name] = transformed_column
+    return data
+
+def decode_categorical_columns(data, label_encoder_list):
+    # pass the data to decode and the label_encoder_list 
+    for i in range(len(label_encoder_list)):
+        le = label_encoder_list[i]["label_encoder"]
+        allowed_values = list(range(len(le.classes_)))
+        
+        # delete rows that should generate numeric value but generate other data type
+        data[label_encoder_list[i]['column']] = pd.to_numeric(data[label_encoder_list[i]['column']], errors='coerce')
+        data = data.dropna(subset=[label_encoder_list[i]['column']])
+
+        # delete rows that generate category that is out of boundary
+        data[label_encoder_list[i]['column']] = data[label_encoder_list[i]['column']].astype(float)
+        data = data[data[label_encoder_list[i]['column']].isin(allowed_values)]
+
+    for i in range(len(label_encoder_list)):
+        le = label_encoder_list[i]["label_encoder"]
+        data[label_encoder_list[i]["column"]] = data[label_encoder_list[i]["column"]].astype(int)
+        data[label_encoder_list[i]["column"]] = le.inverse_transform(data[label_encoder_list[i]["column"]])
+        
+    return data
+
+label_encoder_list = None
+if args.ec: # use tabula ordinalization of categorical columns
+    label_encoder_list = make_label_encoders(alldata, dataconfig['ords'])
+    alldata = None
+    data = encode_categorical_columns(data, label_encoder_list)
+    valdata = encode_categorical_columns(valdata, label_encoder_list)
+    
 
 def parse(raws, args, file_path, outpath):
     real = pd.read_csv(os.path.join(file_path, 'all.csv'))
@@ -142,12 +203,15 @@ def parse(raws, args, file_path, outpath):
     for col in ordvals:
         ordvals[col] = [str(val).strip() for val in ordvals[col]]
 
-    for col in ordvals:
-        df = df[df[col].isin(ordvals[col])]
-        print(col, len(df))
-        if len(df) == 0:
-            print('did not successfully parse samples. returning')
-            return
+    if args.ec:
+        df = decode_categorical_columns(df, label_encoder_list)
+    else:
+        for col in ordvals:
+            df = df[df[col].isin(ordvals[col])]
+            print(col, len(df))
+            if len(df) == 0:
+                print('did not successfully parse samples. returning')
+                return
         
     df.to_csv(os.path.join(outpath, 'samplesclean.csv'), index=False)
 
@@ -302,7 +366,7 @@ else: #use great
         with open(os.path.join(outpath, 'trainplain_config.json'), 'w') as f:
             json.dump(config, f)
         
-        model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
+        model = GReaT(llm=modelname, batch_size=16, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
