@@ -39,6 +39,10 @@ parser.add_argument('-v', '--valtrain', action='store_true',
                     default=False, help='whether to train: train on valset (for fast debugging purposes only)')
 parser.add_argument('-g', '--great', action='store_true',
                     default=False, help='whether to use GReaT-style training/sampling')
+parser.add_argument('-r', '--pre', action='store_true',
+                    default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
+parser.add_argument('-c', '--ec', action='store_true',
+                    default=False, help='whether to Encode the Categorical columns à la Tabula')
 parser.add_argument('-lr', '--lr', type=float,
                     default=1e-6, help='training learning rate')
 parser.add_argument('-n', '--n-samples', type=int,
@@ -95,6 +99,11 @@ with open(os.path.join(file_path, 'config.json'), 'r') as f:
 
 if args.train or args.valtrain:
     copy(os.path.join(file_path, 'config.json'), os.path.join(outpath, 'dataconfig.json'))
+    
+if args.pre:
+    modelname = 'ztphs980/taptap-distill'
+else:
+    modelname = 'distilgpt2'
 
 
 def parse(raws, args, file_path, outpath):
@@ -148,12 +157,12 @@ if args.parse:
     parse(raws, args, file_path, args.path)
 
 elif not args.great:
-    tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
 
-    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained('distilgpt2', device_map='auto')
+    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto')
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -284,8 +293,16 @@ elif not args.great:
         
 else: #use great
     if args.train or args.valtrain:
+        config = {
+            'file_path': file_path,
+            'creation_time': str(now),
+            'lr': args.lr,
+            'args': vars(args)
+        }
+        with open(os.path.join(outpath, 'trainplain_config.json'), 'w') as f:
+            json.dump(config, f)
         
-        model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
+        model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
