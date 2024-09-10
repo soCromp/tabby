@@ -1,6 +1,6 @@
-<div style="text-align: center;">
+<p align="center">
     <img src="imgs/logo3.png" alt="logo" width="50%"/>
-</div>
+</p>
 
 Based off the [Great](https://github.com/kathrinse/be_great) repository.
 
