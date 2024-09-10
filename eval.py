@@ -87,10 +87,13 @@ if dataconfig['task'] == 'classification':
     real = d['real']
     labels = lb.fit_transform(real[labs[0]])
 
+    results = []
+    columns = ['run', 'n', 'acc']
     for k, df in d.items():
         rfc = create_classification_pipeline(df)
         score = rfc.score(real[ords+nums], labels)
-        print(k, '\t\t', score)
+        results.append((k, len(df), score))
+        # print(k, '\t\t', score)
 
 else:
     def create_regression_pipeline(trainset):
@@ -122,5 +125,6 @@ else:
         mse = mean_squared_error(y_pred, labels)
         results.append((k, len(df), rsq, mse))
         # print(k, '\t\t', len(df), '\t\t', rsq, '\t\t', mse)
+    columns = ['run', 'n', 'rsq', 'mse']
 
-print(pd.DataFrame(results, columns = ['run', 'n', 'rsq', 'mse']))
+print(pd.DataFrame(results, columns = columns))
