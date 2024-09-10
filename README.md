@@ -1,3 +1,5 @@
+![tabby logo](imgs/logo3.png "Tabby")
+
 Based off the [Great](https://github.com/kathrinse/be_great) repository.
 
 ## Setup
