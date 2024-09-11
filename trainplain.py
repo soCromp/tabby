@@ -370,7 +370,7 @@ else: #use great
         
         model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
-              experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
+              experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
                 save_total_limit = 5, metric_for_best_model='eval_loss')
             #   efficient_finetuning='lora')
