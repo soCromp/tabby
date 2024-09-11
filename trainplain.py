@@ -39,6 +39,10 @@ parser.add_argument('-v', '--valtrain', action='store_true',
                     default=False, help='whether to train: train on valset (for fast debugging purposes only)')
 parser.add_argument('-g', '--great', action='store_true',
                     default=False, help='whether to use GReaT-style training/sampling')
+parser.add_argument('-r', '--pre', action='store_true',
+                    default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
+parser.add_argument('-c', '--ec', action='store_true',
+                    default=False, help='whether to Encode the Categorical columns à la Tabula')
 parser.add_argument('-lr', '--lr', type=float,
                     default=1e-6, help='training learning rate')
 parser.add_argument('-n', '--n-samples', type=int,
@@ -89,15 +93,81 @@ else:
 if args.valtrain:
     data = pd.read_csv(os.path.join(file_path, 'val.csv'))
     valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    alldata = None
+    # used *uniquely* for making sure all possible values are encoded
+    # with tabula:
+    if args.ec:
+        alldata = pd.read_csv(os.path.join(file_path, 'all.csv')) 
 else:
     data = pd.read_csv(os.path.join(file_path, 'train.csv'))
     valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    alldata = None
+    # used *uniquely* for making sure all possible values are encoded
+    # with tabula:
+    if args.ec:
+        alldata = pd.read_csv(os.path.join(file_path, 'all.csv')) 
 with open(os.path.join(file_path, 'config.json'), 'r') as f:
     dataconfig = json.load(f)
 
 if args.train or args.valtrain:
     copy(os.path.join(file_path, 'config.json'), os.path.join(outpath, 'dataconfig.json'))
+    
+if args.pre:
+    modelname = 'ztphs980/taptap-distill'
+else:
+    modelname = 'distilgpt2'
 
+def make_label_encoders(data, categorical_columns):
+    label_encoder_list = []
+    for column_index, column in enumerate(data.columns):
+        if column in categorical_columns:
+            label_encoder = preprocessing.LabelEncoder()
+            data[column] = data[column].astype(str)
+            label_encoder.fit(data[column])
+            current_label_encoder = dict()
+            current_label_encoder['column'] = column
+            current_label_encoder['label_encoder'] = label_encoder
+            label_encoder_list.append(current_label_encoder)
+    return label_encoder_list
+            
+def encode_categorical_columns(data, label_encoder_list): 
+    # pass the dataframe of data to encode and label_encoder_list
+    for i in range(len(label_encoder_list)):
+        label_encoder = label_encoder_list[i]['label_encoder']
+        column_name = label_encoder_list[i]['column']
+        
+        transformed_column = label_encoder.transform(data[column_name])
+        data[column_name] = transformed_column
+    return data
+
+def decode_categorical_columns(data, label_encoder_list):
+    # pass the data to decode and the label_encoder_list 
+    for i in range(len(label_encoder_list)):
+        le = label_encoder_list[i]["label_encoder"]
+        allowed_values = list(range(len(le.classes_)))
+        
+        # delete rows that should generate numeric value but generate other data type
+        data[label_encoder_list[i]['column']] = pd.to_numeric(data[label_encoder_list[i]['column']], errors='coerce')
+        data = data.dropna(subset=[label_encoder_list[i]['column']])
+
+        # delete rows that generate category that is out of boundary
+        data[label_encoder_list[i]['column']] = data[label_encoder_list[i]['column']].astype(float)
+        data = data[data[label_encoder_list[i]['column']].isin(allowed_values)]
+
+    for i in range(len(label_encoder_list)):
+        le = label_encoder_list[i]["label_encoder"]
+        data[label_encoder_list[i]["column"]] = data[label_encoder_list[i]["column"]].astype(int)
+        data[label_encoder_list[i]["column"]] = le.inverse_transform(data[label_encoder_list[i]["column"]])
+        
+    return data
+
+label_encoder_list = None
+if args.ec: # use tabula ordinalization of categorical columns
+    label_encoder_list = make_label_encoders(alldata, dataconfig['ords'])
+    alldata = None
+    data = encode_categorical_columns(data, label_encoder_list)
+    valdata = encode_categorical_columns(valdata, label_encoder_list)
+    
 
 def parse(raws, args, file_path, outpath):
     real = pd.read_csv(os.path.join(file_path, 'all.csv'))
@@ -135,12 +205,15 @@ def parse(raws, args, file_path, outpath):
     for col in ordvals:
         ordvals[col] = [str(val).strip() for val in ordvals[col]]
 
-    for col in ordvals:
-        df = df[df[col].isin(ordvals[col])]
-        print(col, len(df))
-        if len(df) == 0:
-            print('did not successfully parse samples. returning')
-            return
+    if args.ec:
+        df = decode_categorical_columns(df, label_encoder_list)
+    else:
+        for col in ordvals:
+            df = df[df[col].isin(ordvals[col])]
+            print(col, len(df))
+            if len(df) == 0:
+                print('did not successfully parse samples. returning')
+                return
         
     df.to_csv(os.path.join(outpath, 'samplesclean.csv'), index=False)
 
@@ -150,12 +223,12 @@ if args.parse:
     parse(raws, args, file_path, args.path)
 
 elif not args.great:
-    tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
 
-    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained('distilgpt2', device_map='auto')
+    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto')
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -286,8 +359,16 @@ elif not args.great:
         
 else: #use great
     if args.train or args.valtrain:
+        config = {
+            'file_path': file_path,
+            'creation_time': str(now),
+            'lr': args.lr,
+            'args': vars(args)
+        }
+        with open(os.path.join(outpath, 'trainplain_config.json'), 'w') as f:
+            json.dump(config, f)
         
-        model = GReaT(llm='distilgpt2', batch_size=1, per_device_eval_batch_size=1,
+        model = GReaT(llm=modelname, batch_size=16, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
