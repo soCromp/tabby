@@ -163,7 +163,10 @@ def decode_categorical_columns(data, label_encoder_list):
 
 label_encoder_list = None
 if args.ec: # use tabula ordinalization of categorical columns
-    label_encoder_list = make_label_encoders(alldata, dataconfig['ords'])
+    if dataconfig['task'] == 'regression':
+        label_encoder_list = make_label_encoders(alldata, dataconfig['ords'])
+    elif dataconfig['task'] == 'classification':
+        label_encoder_list = make_label_encoders(alldata, dataconfig['ords']+dataconfig['labs'])
     alldata = None
     data = encode_categorical_columns(data, label_encoder_list)
     valdata = encode_categorical_columns(valdata, label_encoder_list)
