@@ -47,6 +47,8 @@ parser.add_argument('--parse', action='store_true',
                     help='just read in samples.txt and try to parse it- this option is for debugging purposes')
 parser.add_argument('-validation', '--validation', action='store_true',
                     help='just run the validation- for debugging purposes')
+parser.add_argument('-resume', '--resume', action='store_true', default=False,
+                    help='resume great training run after kevin unplugs your router')
 args = parser.parse_args()
 print(args)
 
@@ -289,9 +291,9 @@ else: #use great
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, fp16=True, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                save_total_limit = 5, metric_for_best_model='eval_loss',)
+                save_total_limit = 5, metric_for_best_model='eval_loss')
             #   efficient_finetuning='lora')
-        trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0])
+        trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)
         
         
