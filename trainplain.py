@@ -120,9 +120,8 @@ else:
 ## In case the dataset has blanks in the csv, there will be nan key errors if we don't replace them
 def fill_na(df):
     for col in df:
-        if df[col].dtype in [int, float]:
-            df[col].fillna(0, inplace=True)
-        else:
+        ## Don't fill numerical, or it'll mess with the distribution
+        if df[col].dtype not in [int, float]:
             df[col].fillna("?", inplace=True)
 fill_na(data)
 fill_na(valdata)
