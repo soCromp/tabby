@@ -117,6 +117,17 @@ if args.pre:
 else:
     modelname = 'distilgpt2'
 
+## In case the dataset has blanks in the csv, there will be nan key errors if we don't replace them
+def fill_na(df):
+    for col in df:
+        ## Don't fill numerical, or it'll mess with the distribution
+        if df[col].dtype not in [int, float]:
+            df[col].fillna("?", inplace=True)
+fill_na(data)
+fill_na(valdata)
+if alldata is not None:
+    fill_na(alldata)
+
 def make_label_encoders(data, categorical_columns):
     label_encoder_list = []
     for column_index, column in enumerate(data.columns):
@@ -375,7 +386,7 @@ else: #use great
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                save_total_limit = 5, metric_for_best_model='eval_loss')
+                save_total_limit = 2, metric_for_best_model='eval_loss')
             #   efficient_finetuning='lora')
         trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)
