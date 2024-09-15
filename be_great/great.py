@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, \
-            EarlyStoppingCallback, #BitsAndBytesConfig
+            EarlyStoppingCallback #BitsAndBytesConfig
 
 from be_great.great_dataset import GReaTDataset, GReaTDataCollator
 from be_great.great_start import (

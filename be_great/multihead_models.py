@@ -39,6 +39,9 @@ class MultiLayer(nn.Module):
         return self.layers[self.col.value](hidden_states)
         
     
+class MOECausalLMOutputWithPast(CausalLMOutputWithPast):
+    collosses: []
+    
 def MOEModelForCausalLM(model, **kwargs):
     superclassForCausalLM = type(model)
     superclassForHeadlessLM = SUPERCLASS_FOR_HEADLESS_LM[type(model)]
@@ -111,7 +114,7 @@ def MOEModelForCausalLM(model, **kwargs):
             #     self.col.value +=1
             
             
-            return CausalLMOutputWithPast(
+            return MOECausalLMOutputWithPast(
                 loss = None,
                 logits = lm_logits,
                 past_key_values = transformer_outputs.past_key_values,
@@ -176,7 +179,7 @@ def MOEModelForCausalLM(model, **kwargs):
                         
                     mask = torch.ones_like(prompt)
                     
-            return CausalLMOutputWithPast(
+            return MOECausalLMOutputWithPast(
                 loss = lossavg,
                 logits = lm_logits,
                 past_key_values = transformer_outputs.past_key_values,

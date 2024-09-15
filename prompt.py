@@ -2,19 +2,19 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import pandas as pd
 from tqdm import tqdm
 
-modelname = 'meta-llama/Meta-Llama-3-8B'
+modelname = 'gpt2'
 model = AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda')
-tokenizer = AutoTokenizer.from_pretrained(modelname)
+tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 train = pd.read_csv('./data/diabetes-new/latest/train.csv')
 def row_to_col_sentences(row):
 	return "".join( [str(col).strip() + " is " + str(val).strip() + ', ' for col, val in zip(row.index, row.values)])
 
-batch_size = 8
-ex_size = 20
+batch_size = 32
+ex_size = 12
 n = 10000
-outpath = './llamaicl.csv'
+outpath = './gpt2icl.csv'
 
 def parse(row):
 	try:
@@ -38,12 +38,16 @@ for i in tqdm(range(0, n, batch_size)):
 		prompt = 'Provide the next one row of this tabular dataset:\n' + '\n'.join(text_data) + '\n'
 		prompts.append(prompt)
 
-	toks = tokenizer(prompts, return_tensors='pt')
+	toks = tokenizer(prompts, return_tensors='pt', padding=True)
 	outtoks = model.generate(input_ids=toks.input_ids.cuda(), attention_mask=toks.attention_mask.cuda(), 
 							do_sample=True, max_new_tokens=120)
 	outwin = tokenizer.batch_decode(outtoks)
 	outs = [text[len(prompt):] for text, prompt in zip(outwin, prompts)]
-	outstrim = [text.split('\n')[1] for text in outs]
+	outstrim = []
+	for text in outs:
+		lines = text.split('\n')
+		if len(lines) >=2:
+			outstrim.append(lines[1])
 
 	parsed = [parse(row) for row in outstrim]
 	parsed = [p for p in parsed if p is not None]
