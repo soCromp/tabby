@@ -45,6 +45,8 @@ parser.add_argument('-c', '--ec', action='store_true',
                     default=False, help='whether to Encode the Categorical columns à la Tabula')
 parser.add_argument('-llama', '--llama', action='store_true',
                     default=False, help='use llama3 8B')
+parser.add_argument('-gpt2', '--gpt2', action='store_true',
+                    default=False, help='use non-distilled GPT2')
 parser.add_argument('-lora', '--lora', action='store_true',
                     default=False, help='use LORA')
 parser.add_argument('-lr', '--lr', type=float,
@@ -120,6 +122,8 @@ if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama:
     modelname = 'meta-llama/Meta-Llama-3-8B'
+elif args.gpt2:
+    modelname = 'gpt2'
 else:
     modelname = 'distilgpt2'
 
