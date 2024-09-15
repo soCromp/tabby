@@ -43,6 +43,10 @@ parser.add_argument('-r', '--pre', action='store_true',
                     default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
 parser.add_argument('-c', '--ec', action='store_true',
                     default=False, help='whether to Encode the Categorical columns à la Tabula')
+parser.add_argument('-llama', '--llama', action='store_true',
+                    default=False, help='use llama3 8B')
+parser.add_argument('-lora', '--lora', action='store_true',
+                    default=False, help='use LORA')
 parser.add_argument('-lr', '--lr', type=float,
                     default=1e-6, help='training learning rate')
 parser.add_argument('-n', '--n-samples', type=int,
@@ -114,6 +118,8 @@ if args.train or args.valtrain:
     
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
+elif args.llama:
+    modelname = 'meta-llama/Meta-Llama-3-8B'
 else:
     modelname = 'distilgpt2'
 
@@ -305,7 +311,7 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 5, metric_for_best_model='eval_loss',)
+                                  save_total_limit = 3, metric_for_best_model='eval_loss',)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train()
@@ -370,13 +376,17 @@ else: #use great
         }
         with open(os.path.join(outpath, 'trainplain_config.json'), 'w') as f:
             json.dump(config, f)
+            
+        ef = False
+        if args.lora:
+            ef = 'lora'
         
         model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
               epochs=50, save_steps=5000,
               experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
                 load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                save_total_limit = 5, metric_for_best_model='eval_loss')
-            #   efficient_finetuning='lora')
+                save_total_limit = 3, metric_for_best_model='eval_loss',
+              efficient_finetuning=ef, fp16=args.llama)
         trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)
         
