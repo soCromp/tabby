@@ -2,12 +2,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import pandas as pd
 from tqdm import tqdm
 import sys
+import torch
 
 modelname = sys.argv[-3] # 'gpt2'
 outpath = sys.argv[-2] # './gpt2icl.csv'
 ex_size = int(sys.argv[-1]) # 12
 
-model = AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda')
+model = AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda', torch_dtype=torch.float16)
 tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
