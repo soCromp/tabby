@@ -10,7 +10,8 @@ import pandas as pd
 from tqdm import tqdm
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, EarlyStoppingCallback
+from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, \
+            EarlyStoppingCallback, #BitsAndBytesConfig
 
 from be_great.great_dataset import GReaTDataset, GReaTDataCollator
 from be_great.great_start import (
@@ -87,7 +88,8 @@ class GReaT:
         self.llm = llm
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto')
+        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', )
+            # quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4"))
         self.moe = moe
         self.multihead = multihead
             
@@ -176,6 +178,8 @@ class GReaT:
             print(self.model)
         if self.efficient_finetuning_func is not None:
             self.efficient_finetuning_func()
+            
+        print(self.model)
 
         # Convert DataFrame into HuggingFace dataset object
         logging.info("Convert data into HuggingFace dataset object...")
@@ -437,14 +441,21 @@ class GReaT:
             attributes = self.__dict__.copy()
             attributes.pop("tokenizer")
             attributes.pop("model")
+            attributes.pop("efficient_finetuning_func")
 
             # NDArray is not JSON serializable and therefore has to be converted into a list.
             if isinstance(attributes["conditional_col_dist"], np.ndarray):
                 attributes["conditional_col_dist"] = list(
                     attributes["conditional_col_dist"]
                 )
+                print(attributes["conditional_col_dist"])
 
             json.dump(attributes, f)
+            
+        if self.efficient_finetuning == "lora":
+            self.model = self.model.merge_and_unload()
+            
+        print(self.model)
 
         # Save model weights
         torch.save(self.model.state_dict(), path + "/model.pt")
