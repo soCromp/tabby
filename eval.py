@@ -8,7 +8,8 @@ import os
 
 ckptpath = sys.argv[-1]
 synth = pd.read_csv(os.path.join(ckptpath, 'samplesclean.csv'))
-with open(os.path.join(ckptpath, 'dataconfig.json')) as f:
+dataname = sys.argv[-2]
+with open(f'./data/{dataname}/latest/config.json') as f:
     dataconfig = json.load(f)
 
 trainpath = f'./data/{dataconfig["dataset_name"]}/latest/train.csv'
@@ -67,8 +68,8 @@ def preprocess_df(df, categoriesdict):
     df = df[train.columns] # put all in same order
     # df = df.sample(2000)
     
-    for colname in df.columns:
-        df[colname] = df[colname].astype(train[colname].dtype)
+    # for colname in df.columns:
+    #     df[colname] = df[colname].astype(train[colname].dtype)
         
     # print(k, '\t\t', len(df))
     return df, categoriesdict
