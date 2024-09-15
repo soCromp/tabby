@@ -1,20 +1,22 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import pandas as pd
 from tqdm import tqdm
+import sys
 
-modelname = 'gpt2'
+modelname = sys.argv[-3] # 'gpt2'
+outpath = sys.argv[-2] # './gpt2icl.csv'
+ex_size = int(sys.argv[-1]) # 12
+
 model = AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda')
 tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
-train = pd.read_csv('./data/diabetes-new/latest/train.csv')
+train = pd.read_csv('./data/house-new-tiny/latest/train.csv')
 def row_to_col_sentences(row):
 	return "".join( [str(col).strip() + " is " + str(val).strip() + ', ' for col, val in zip(row.index, row.values)])
 
 batch_size = 32
-ex_size = 12
 n = 10000
-outpath = './gpt2icl.csv'
 
 def parse(row):
 	try:
