@@ -145,20 +145,20 @@ else:
         complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
         return complete_pipeline
     
-    real = d['real']
-    labels = real[labs[0]]
-    # labels = (real[labs[0]]-real[labs[0]].mean()) / real[labs[0]].std()
-    
+    labels = test[labs[0]]
     results = []
-    for k, df in d.items():
-        rfc = create_regression_pipeline(df)
-        # print(df.describe())
-        # labels = (df[labs[0]]-df[labs[0]].mean()) / df[labs[0]].std()
-        rsq = rfc.score(real[ords+nums], labels)
-        y_pred = rfc.predict(real[ords+nums])
-        mse = mean_squared_error(y_pred, labels)
-        results.append((k, len(df), rsq, mse))
-        # print(k, '\t\t', len(df), '\t\t', rsq, '\t\t', mse)
     columns = ['run', 'n', 'rsq', 'mse']
+    
+    rfc_real = create_regression_pipeline(train)
+    rsq = rfc_real.score(test[ords+nums], labels)
+    y_pred = rfc_real.predict(test[ords+nums])
+    mse = mean_squared_error(y_pred, labels)
+    results.append(('real', len(train), rsq, mse))
+    
+    rfc_synth = create_regression_pipeline(synth)
+    rsq = rfc_synth.score(test[ords+nums], labels)
+    y_pred = rfc_synth.predict(test[ords+nums])
+    mse = mean_squared_error(y_pred, labels)
+    results.append(('synth', len(synth), rsq, mse))
 
 print(pd.DataFrame(results, columns = columns))

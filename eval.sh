@@ -7,7 +7,7 @@ if [ -z "$1" ]; then
 fi
 
 # Iterate over all 'samplesclean.csv' files in subdirectories
-find "$1" -type f -name 'samplesclean.csv' | while read -r filepath; do
+find "$1" -type f -name 'samplesclean.csv' | sort | while read -r filepath; do
   # Get the enclosing directory of the file
   dirpath=$(dirname "$filepath")
   
@@ -15,6 +15,6 @@ find "$1" -type f -name 'samplesclean.csv' | while read -r filepath; do
   echo "Processing directory: $dirpath"
   
   # Call the Python script ~/eval.py with the file as an argument
-  python3 ~/be_great/eval.py adult "$dirpath"
+  python3 ~/tabby/eval.py house-new "$dirpath"
 done
 
