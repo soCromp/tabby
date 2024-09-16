@@ -119,13 +119,15 @@ with open(os.path.join(file_path, 'config.json'), 'r') as f:
 if args.train or args.valtrain:
     copy(os.path.join(file_path, 'config.json'), os.path.join(outpath, 'dataconfig.json'))
     
+
+if os.path.exists('./accesstoken.txt'):
+    with open('./accesstoken.txt', 'r') as f:
+        accesstoken = f.read()
+    
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama:
     modelname = 'meta-llama/Meta-Llama-3-8B'
-    if os.path.exists('./accesstoken.txt'):
-        with open('./accesstoken.txt', 'r') as f:
-            accesstoken = f.read()
 elif args.gpt2:
     modelname = 'gpt2'
 else:
@@ -411,7 +413,7 @@ else: #use great
         
         
         great_valds = GReaTDataset.from_pandas(valdata)
-        great_valds.set_stuff(model.tokenizer, args.moe) 
+        great_valds.set_stuff(model.tokenizer, args.moe or args.mh) 
         valresult = trainer.evaluate(great_valds)
         print('valresult', valresult)
         with open(os.path.join(outpath, 'validationeval.json'), 'w') as f:
