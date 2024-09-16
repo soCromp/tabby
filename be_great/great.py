@@ -89,17 +89,32 @@ class GReaT:
                 accesstoken = f.read()
             accesstoken = accesstoken.split(' ')[-1][:-1]
             print(accesstoken)
+        else:
+            accesstoken = None
                 
         # Load Model and Tokenizer from HuggingFace
         self.efficient_finetuning = efficient_finetuning
         self.llm = llm
-        self.tokenizer = AutoTokenizer.from_pretrained(self.llm, token=accesstoken)
+        if accesstoken is not None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.llm, token=accesstoken)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.llm,)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken,
-            quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
-            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16))
         self.moe = moe
         self.multihead = multihead
+        
+        if self.efficient_finetuning == "lora":
+            quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
+        else:
+            quantization_config = None
+        
+        if accesstoken is not None:
+            self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken,
+            quantization_config=quantization_config)
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto',
+            quantization_config=quantization_config)
         
             
 

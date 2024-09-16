@@ -60,6 +60,8 @@ parser.add_argument('-validation', '--validation', action='store_true',
                     help='just run the validation- for debugging purposes')
 parser.add_argument('-resume', '--resume', action='store_true', default=False,
                     help='resume great training run after kevin unplugs your router')
+parser.add_argument('-e', '--epochs', type=int,
+                    default=50, help='number of epochs to train')
 args = parser.parse_args()
 print(args)
 
@@ -123,6 +125,8 @@ if args.train or args.valtrain:
 if os.path.exists('./accesstoken.txt'):
     with open('./accesstoken.txt', 'r') as f:
         accesstoken = f.read()
+else:
+    accesstoken = None
     
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
@@ -253,12 +257,18 @@ if args.parse:
     parse(raws, args, file_path, args.path)
 
 elif not args.great:
-    tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left', token=accesstoken)
+    if accesstoken is not None:
+        tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left', token=accesstoken)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
 
-    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken)
+    if accesstoken is not None:
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken)
+    else:
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto',)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -274,12 +284,11 @@ elif not args.great:
     print(model)
     
     if args.train or args.valtrain:
-        epochs = 50
         config = {
             'file_path': file_path,
             'creation_time': str(now),
             'lr': args.lr,
-            'epochs': epochs,
+            'epochs': args.epochs,
             'args': vars(args)
         }
         with open(os.path.join(outpath, 'config.json'), 'w') as f:
@@ -330,7 +339,7 @@ elif not args.great:
         
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
-                                  learning_rate=args.lr, num_train_epochs=epochs,
+                                  learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
                                   save_total_limit = 3, metric_for_best_model='eval_loss',)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
@@ -403,7 +412,7 @@ else: #use great
             ef = 'lora'
         
         model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
-            epochs=10, save_steps=5000,
+            epochs=args.epochs, save_steps=5000,
             experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
             load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
             save_total_limit = 1, metric_for_best_model='eval_loss',
