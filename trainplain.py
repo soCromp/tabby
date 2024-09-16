@@ -98,8 +98,8 @@ else:
         raise Exception('unsupported dataset', args.dataset)
     
 if args.valtrain:
-    data = pd.read_csv(os.path.join(file_path, 'val.csv'))
-    valdata = pd.read_csv(os.path.join(file_path, 'val.csv'))
+    data = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:100,-3:]
+    valdata = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:100,-3:]
     alldata = None
     # used *uniquely* for making sure all possible values are encoded
     # with tabula:
@@ -403,10 +403,10 @@ else: #use great
             ef = 'lora'
         
         model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
-            epochs=50, save_steps=5000,
+            epochs=10, save_steps=5000,
             experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
             load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-            save_total_limit = 2, metric_for_best_model='eval_loss',
+            save_total_limit = 1, metric_for_best_model='eval_loss',
             efficient_finetuning=ef, fp16=args.llama)
         trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)

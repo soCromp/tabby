@@ -12,7 +12,7 @@ from tqdm import tqdm
 os.environ['TRANSFORMERS_CACHE'] = '../cache/'
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, \
-            EarlyStoppingCallback #BitsAndBytesConfig
+            EarlyStoppingCallback, BitsAndBytesConfig
 
 from be_great.great_dataset import GReaTDataset, GReaTDataCollator
 from be_great.great_start import (
@@ -87,14 +87,17 @@ class GReaT:
         if os.path.exists('./accesstoken.txt'):
             with open('./accesstoken.txt', 'r') as f:
                 accesstoken = f.read()
+            accesstoken = accesstoken.split(' ')[-1][:-1]
+            print(accesstoken)
                 
         # Load Model and Tokenizer from HuggingFace
         self.efficient_finetuning = efficient_finetuning
         self.llm = llm
         self.tokenizer = AutoTokenizer.from_pretrained(self.llm, token=accesstoken)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken)
-            # quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4"))
+        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken,
+            quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16))
         self.moe = moe
         self.multihead = multihead
         
@@ -118,7 +121,7 @@ class GReaT:
             lora_config = LoraConfig(
                 r=1,  
                 lora_alpha=256,
-                target_modules='all-linear',
+                target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'],
                 lora_dropout=0.05,
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
@@ -182,6 +185,7 @@ class GReaT:
             self.model.set_train_mode()
             print(df.shape[1], 'experts model')
             print(self.model)
+
         if self.efficient_finetuning_func is not None:
             self.efficient_finetuning_func()
             
@@ -219,6 +223,8 @@ class GReaT:
         # Start training
         logging.info("Start training...")
         great_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        if self.efficient_finetuning_func is not None:
+           self.model = self.model.merge_and_unload()
         return great_trainer
 
     def sample(
@@ -458,8 +464,8 @@ class GReaT:
 
             json.dump(attributes, f)
             
-        if self.efficient_finetuning == "lora":
-            self.model = self.model.merge_and_unload()
+        #if self.efficient_finetuning == "lora":
+        #    self.model = self.model.merge_and_unload()
             
         print(self.model)
 
