@@ -1,3 +1,5 @@
+import os
+os.environ['TRANSFORMERS_CACHE'] = './cache/'
 import transformers
 from torch import nn
 import torch
@@ -10,7 +12,6 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
 from matplotlib import pyplot as plt
 from tqdm import tqdm 
-import os
 import argparse
 import datetime
 import json
@@ -122,6 +123,9 @@ if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama:
     modelname = 'meta-llama/Meta-Llama-3-8B'
+    if os.path.exists('./accesstoken.txt'):
+        with open('./accesstoken.txt', 'r') as f:
+            accesstoken = f.read()
 elif args.gpt2:
     modelname = 'gpt2'
 else:
@@ -247,12 +251,12 @@ if args.parse:
     parse(raws, args, file_path, args.path)
 
 elif not args.great:
-    tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left', token=accesstoken)
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
 
-    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto')
+    dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     

@@ -9,6 +9,7 @@ import pandas as pd
 
 from tqdm import tqdm
 
+os.environ['TRANSFORMERS_CACHE'] = '../cache/'
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, \
             EarlyStoppingCallback #BitsAndBytesConfig
@@ -83,15 +84,20 @@ class GReaT:
              see here the full list of all possible values
              https://huggingface.co/docs/transformers/main/en/main_classes/trainer#transformers.TrainingArguments
         """
+        if os.path.exists('./accesstoken.txt'):
+            with open('./accesstoken.txt', 'r') as f:
+                accesstoken = f.read()
+                
         # Load Model and Tokenizer from HuggingFace
         self.efficient_finetuning = efficient_finetuning
         self.llm = llm
-        self.tokenizer = AutoTokenizer.from_pretrained(self.llm)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.llm, token=accesstoken)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', )
+        self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken)
             # quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4"))
         self.moe = moe
         self.multihead = multihead
+        
             
 
         if self.efficient_finetuning == "lora":
