@@ -2,39 +2,35 @@ import pandas as pd
 import numpy as np
 import sys 
 import json 
-from sklearn import preprocessing, pipeline, ensemble, compose
+from sklearn import preprocessing, pipeline, ensemble, compose, tree, linear_model
 from sklearn.metrics import *
 import os 
+from copy import deepcopy
 
-ckptpath = sys.argv[-1]
-synth = pd.read_csv(os.path.join(ckptpath, 'samplesclean.csv'))
-dataname = sys.argv[-2]
+dataname = sys.argv[1]
 with open(f'./data/{dataname}/latest/config.json') as f:
     dataconfig = json.load(f)
-
+    
 trainpath = f'./data/{dataconfig["dataset_name"]}/latest/train.csv'
 testpath = f'./data/{dataconfig["dataset_name"]}/latest/test.csv'
 train = pd.read_csv(trainpath)
 test = pd.read_csv(testpath)
-
-# configpath = sys.argv[-1]
-# with open(configpath) as f:
-#     config = json.load(f)
     
-# with open(f'./data/{config["dataset"]}/latest/config.json') as f: 
-#     dataconfig = json.load(f)
+sets = [train,]
+names = ['real',]
+for i in range(2, len(sys.argv)):
+    ckptpath = sys.argv[i]
+    names.append(ckptpath[10:])
+    if ckptpath.endswith('.csv'):
+        synth = pd.read_csv(ckptpath)
+    else:
+        synth = pd.read_csv(os.path.join(ckptpath, 'samplesclean.csv'))
+    sets.append(synth)
     
-# d = {}
-# d['real'] = pd.read_csv(f'./data/{config["dataset"]}/latest/test.csv')
-# config.pop('dataset')
 
-# for name, paths in config.items():
-#     d[name] = pd.read_csv(paths[0])
-
-
-nums = dataconfig['nums']
-ords = dataconfig['ords']
-labs = dataconfig['labs']
+numcols = dataconfig['nums']
+ordcols = dataconfig['ords']
+labcols = dataconfig['labs']
 
 categoriesdict = dict() # collect all unique values for each of the ordinal columns
 def to_float_or_nan(value):
@@ -44,23 +40,24 @@ def to_float_or_nan(value):
         return np.nan
     
 if dataconfig['task'] == 'classification':
-    labvals = set([l.strip() for l in train[labs[0]].unique()]) | \
-                set([l.strip() for l in test[labs[0]].unique()])
+    labvals = set([l.strip() for l in train[labcols[0]].unique()]) | \
+                set([l.strip() for l in test[labcols[0]].unique()])
     # print(labvals)
     
 def preprocess_df(df, categoriesdict):
     # remove extra spaces around strings, eg ' dog' -> 'dog'
     df = df.map(lambda x: x.strip() if type(x) == str else x)
-    df.loc[:,nums] = df.loc[:,nums].map(to_float_or_nan)
-    df.loc[:,ords] = df.loc[:,ords].fillna('?')
-    for col in ords:
+    df.loc[:,numcols] = df.loc[:,numcols].map(to_float_or_nan)
+    df.loc[:,ordcols] = df.loc[:,ordcols].fillna('?')
+    df.loc[:,ordcols] = df.loc[:,ordcols].map(lambda x: x.strip())
+    for col in ordcols:
         categoriesdict[col] = categoriesdict.get(col, []) + df[col].unique().tolist()
     
     if dataconfig['task'] == 'classification':
-        df = df[df[labs[0]].isin(labvals)]
+        df = df[df[labcols[0]].isin(labvals)]
     else:
-        df.loc[:,labs[0]] = df.loc[:,labs[0]].map(to_float_or_nan)
-        df = df[~df.isna()[labs[0]]]
+        df.loc[:,labcols[0]] = df.loc[:,labcols[0]].map(to_float_or_nan)
+        df = df[~df.isna()[labcols[0]]]
         
     # df = df.dropna()
         
@@ -74,91 +71,192 @@ def preprocess_df(df, categoriesdict):
     # print(k, '\t\t', len(df))
     return df, categoriesdict
 
-train, categoriesdict = preprocess_df(train, categoriesdict)
+
 test, categoriesdict = preprocess_df(test, categoriesdict)
-synth, categoriesdict = preprocess_df(synth, categoriesdict)
-# print(train)
-# print(test)
-# print(synth)
+for i in range(len(sets)):
+    sets[i], categoriesdict = preprocess_df(sets[i], categoriesdict)
+train = sets[0]
 
 categories = []
-for col in ords:
+for col in ordcols:
     categories.append(list(set(categoriesdict[col])))
 
 ordenc = preprocessing.OrdinalEncoder(categories=categories)
 numenc = preprocessing.StandardScaler()
 
+def distance_to_closest_record(synth, real):
+    # takes a synthetic dataset and the real *train* dataset
+    nums = deepcopy(dataconfig['nums'])
+    ords = deepcopy(dataconfig['ords'])
+    if dataconfig['task'] == 'regression':
+        nums.extend(dataconfig['labs'])
+    else: # classification
+        ords.extend(dataconfig['labs'])
+    
+    mindists = synth.apply(lambda x: ((x[nums]-real[nums]).abs().sum(axis=1) + \
+        (x[ords]!=real[ords]).sum(axis=1)).min(), axis=1)
+    return mindists
+
+def discriminate(synth, real):
+    size = 2*min(len(synth), len(real))
+    synth = deepcopy(synth).sample(size//2, random_state=dataconfig['random_state'])
+    synth['set'] = 'synth'
+    real = deepcopy(real).sample(size//2, random_state=dataconfig['random_state'])
+    real['set'] = 'real'
+    data = pd.concat([synth, real]).sample(frac=1, random_state=dataconfig['random_state'])
+    train = data[:size*3//4]
+    test = data[size*3//4:]
+    trainlabels = train.pop('set')
+    testlabels = test.pop('set')
+    
+    discrim_ordcols = deepcopy(dataconfig['ords'])
+    discrim_numcols = deepcopy(dataconfig['nums'])
+    
+    discrim_categories = deepcopy(categories)
+    if dataconfig['task'] == 'classification':
+        discrim_categories.append(list(set(real[labcols[0]].unique())))
+        discrim_ordcols.extend(labcols)
+    else: #regression
+        discrim_numcols.extend(labcols)
+
+    discrim_ordenc = preprocessing.OrdinalEncoder(categories=discrim_categories)
+    discrim_numenc = preprocessing.StandardScaler()
+    lb = preprocessing.LabelBinarizer()
+    
+    model = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=dataconfig['random_state'])
+    preprocessing_pipeline = compose.ColumnTransformer([
+        ("ordinal_preprocessor", discrim_ordenc, discrim_ordcols),
+        ("numerical_preprocessor", discrim_numenc, discrim_numcols),
+    ])
+    complete_pipeline = pipeline.Pipeline([
+        ("preprocessor", preprocessing_pipeline),
+        ("estimator", model)
+    ])
+    
+    # print(train[ordcols+numcols].head())
+    preprocessed_trainlabels = lb.fit_transform(trainlabels).ravel()
+    preprocessed_testlabels = lb.fit_transform(testlabels).ravel()
+    complete_pipeline.fit(train[discrim_ordcols+discrim_numcols], preprocessed_trainlabels)
+    acc = complete_pipeline.score(test[discrim_ordcols+discrim_numcols], preprocessed_testlabels)
+    return acc
+
+def k_anon(data):
+    n_clusters = 100
+
 if dataconfig['task'] == 'classification':
     lb = preprocessing.LabelBinarizer()
 
-    def create_classification_pipeline(trainset):
-        rfc = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=dataconfig['random_state'])
+    def create_classification_pipeline(trainset, type='rfc'):
+        if type == 'rfc':
+            model = ensemble.RandomForestClassifier(n_estimators=10, max_depth=4, random_state=dataconfig['random_state'])
+        elif type == 'dt':
+            model = tree.DecisionTreeClassifier(min_samples_split=4, random_state=dataconfig['random_state'])
+        elif type == 'lr':
+            model = linear_model.LogisticRegression(random_state=dataconfig['random_state'])
+            
         preprocessing_pipeline = compose.ColumnTransformer([
-            ("ordinal_preprocessor", ordenc, ords),
-            ("numerical_preprocessor", numenc, nums),
+            ("ordinal_preprocessor", ordenc, ordcols),
+            ("numerical_preprocessor", numenc, numcols),
         ])
         complete_pipeline = pipeline.Pipeline([
             ("preprocessor", preprocessing_pipeline),
-            ("estimator", rfc)
+            ("estimator", model)
         ])
         
-        preprocessed_labels = lb.fit_transform(trainset[labs[0]]).ravel()
-        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
+        preprocessed_labels = lb.fit_transform(trainset[labcols[0]]).ravel()
+        complete_pipeline.fit(trainset[ordcols+numcols], preprocessed_labels)
         return complete_pipeline
     
-    labels = lb.fit_transform(test[labs[0]])
+    labels = lb.fit_transform(test[labcols[0]])
     results = []
-    columns = ['run', 'n', 'acc']
-    
-    rfc_real = create_classification_pipeline(train)
-    score = rfc_real.score(test[ords+nums], labels)
-    results.append(('real', len(train), score))
-    
-    rfc_synth = create_classification_pipeline(synth)
-    score = rfc_synth.score(test[ords+nums], labels)
-    results.append(('synth', len(synth), score))
+    columns = ['run', 'n', 'rfc-acc', 'dt-acc', 'lr-acc', 
+            #    'dcr-mean', 'dcr-std', 
+               'disc']
 
-    # real = d['real']
-    # labels = lb.fit_transform(real[labs[0]])
-
-    # results = []
-    # columns = ['run', 'n', 'acc']
-    # for k, df in d.items():
-    #     rfc = create_classification_pipeline(df)
-    #     score = rfc.score(real[ords+nums], labels)
-    #     results.append((k, len(df), score))
-    #     # print(k, '\t\t', score)
+    
+    for i in range(len(sets)):
+        data = sets[i]
+        print(names[i])
+        # random forest
+        rf = create_classification_pipeline(data, type='rfc')
+        score_rf = rf.score(test[ordcols+numcols], labels)
+        
+        # decision tree
+        dt = create_classification_pipeline(data, 'dt')
+        score_dt = dt.score(test[ordcols+numcols], labels)
+        
+        # logistic regression
+        lr = create_classification_pipeline(data.dropna(axis=0), 'lr')
+        score_lr = lr.score(test[ordcols+numcols].dropna(axis=0), labels)
+        
+        # DCR
+        # dcr = distance_to_closest_record(data, train)
+        
+        # discrimination
+        disacc = discriminate(data, train)
+        
+        results.append((names[i], len(data), score_rf, score_dt, score_lr,
+            # dcr.mean(), dcr.std(), 
+            disacc))
+    
 
 else:
-    def create_regression_pipeline(trainset):
-        rfc = ensemble.RandomForestRegressor(random_state=dataconfig['random_state'])
+    def create_regression_pipeline(trainset, type='rfr'):
+        if type == 'rfr':
+            model = ensemble.RandomForestRegressor(random_state=dataconfig['random_state'])
+        elif type == 'dt':
+            model = tree.DecisionTreeRegressor(min_samples_split=80, random_state=dataconfig['random_state'])
+        elif type == 'lr':
+            model = linear_model.LinearRegression()
+            
         preprocessing_pipeline = compose.ColumnTransformer([
-            ("ordinal_preprocessor", ordenc, ords),
-            ("numerical_preprocessor", numenc, nums),
+            ("ordinal_preprocessor", ordenc, ordcols),
+            ("numerical_preprocessor", numenc, numcols),
         ])
         complete_pipeline = pipeline.Pipeline([
             ("preprocessor", preprocessing_pipeline),
-            ("estimator", rfc)
+            ("estimator", model)
         ])
         
-        preprocessed_labels = trainset[labs[0]] # (trainset[labs[0]]-trainset[labs[0]].mean()) / trainset[labs[0]].std()
-        complete_pipeline.fit(trainset[ords+nums], preprocessed_labels)
+        preprocessed_labels = trainset[labcols[0]] # (trainset[labs[0]]-trainset[labs[0]].mean()) / trainset[labs[0]].std()
+        complete_pipeline.fit(trainset[ordcols+numcols], preprocessed_labels)
         return complete_pipeline
     
-    labels = test[labs[0]]
+    labels = test[labcols[0]]
     results = []
-    columns = ['run', 'n', 'rsq', 'mse']
+    columns = ['run', 'n', 'rfr-rsq', 'rfr-mse', 'dt-rsq', 'dt-mse',
+               'lr-rsq', 'lr-mse', 'dcr-mean', 'dcr-std']
     
-    rfc_real = create_regression_pipeline(train)
-    rsq = rfc_real.score(test[ords+nums], labels)
-    y_pred = rfc_real.predict(test[ords+nums])
-    mse = mean_squared_error(y_pred, labels)
-    results.append(('real', len(train), rsq, mse))
-    
-    rfc_synth = create_regression_pipeline(synth)
-    rsq = rfc_synth.score(test[ords+nums], labels)
-    y_pred = rfc_synth.predict(test[ords+nums])
-    mse = mean_squared_error(y_pred, labels)
-    results.append(('synth', len(synth), rsq, mse))
+    for i in range(len(sets)):
+        data = sets[i]
+        # random forest
+        rf = create_regression_pipeline(data, 'rfr')
+        rsq_rf = rf.score(test[ordcols+numcols], labels)
+        y_pred = rf.predict(test[ordcols+numcols])
+        mse_rf = mean_squared_error(y_pred, labels)
+        
+        # decision tree
+        dt = create_regression_pipeline(data, 'dt')
+        rsq_dt = dt.score(test[ordcols+numcols], labels)
+        y_pred = dt.predict(test[ordcols+numcols])
+        mse_dt = mean_squared_error(y_pred, labels)
+        
+        # linear regression
+        lr = create_regression_pipeline(data, 'lr')
+        rsq_lr = lr.score(test[ordcols+numcols], labels)
+        y_pred = lr.predict(test[ordcols+numcols])
+        mse_lr = mean_squared_error(y_pred, labels)
+        
+        # DCR
+        dcr = distance_to_closest_record(data, train)
+        
+        # discrimination
+        disacc = discriminate(data, train)
+        
+        results.append((names[i], len(data), 
+            rsq_rf, mse_rf, rsq_dt, mse_dt, rsq_lr, mse_lr, dcr.mean(), dcr.std()))
 
-print(pd.DataFrame(results, columns = columns))
+df = pd.DataFrame(results, columns = columns)
+print(df)
+df.to_excel(sys.argv[-1]+'eval.xlsx')
+
