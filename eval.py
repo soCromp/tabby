@@ -225,10 +225,13 @@ else:
     labels = test[labcols[0]]
     results = []
     columns = ['run', 'n', 'rfr-rsq', 'rfr-mse', 'dt-rsq', 'dt-mse',
-               'lr-rsq', 'lr-mse', 'dcr-mean', 'dcr-std']
+               'lr-rsq', 'lr-mse', 
+            #    'dcr-mean', 'dcr-std'
+               ]
     
     for i in range(len(sets)):
         data = sets[i]
+        print(names[i])
         # random forest
         rf = create_regression_pipeline(data, 'rfr')
         rsq_rf = rf.score(test[ordcols+numcols], labels)
@@ -242,19 +245,21 @@ else:
         mse_dt = mean_squared_error(y_pred, labels)
         
         # linear regression
-        lr = create_regression_pipeline(data, 'lr')
-        rsq_lr = lr.score(test[ordcols+numcols], labels)
-        y_pred = lr.predict(test[ordcols+numcols])
+        lr = create_regression_pipeline(data.dropna(axis=0), 'lr')
+        rsq_lr = lr.score(test[ordcols+numcols].dropna(axis=0), labels)
+        y_pred = lr.predict(test[ordcols+numcols].dropna(axis=0))
         mse_lr = mean_squared_error(y_pred, labels)
         
         # DCR
-        dcr = distance_to_closest_record(data, train)
+        # dcr = distance_to_closest_record(data, train)
         
         # discrimination
         disacc = discriminate(data, train)
         
         results.append((names[i], len(data), 
-            rsq_rf, mse_rf, rsq_dt, mse_dt, rsq_lr, mse_lr, dcr.mean(), dcr.std()))
+            rsq_rf, mse_rf, rsq_dt, mse_dt, rsq_lr, mse_lr, 
+            # dcr.mean(), dcr.std())
+                       ))
 
 df = pd.DataFrame(results, columns = columns)
 print(df)
