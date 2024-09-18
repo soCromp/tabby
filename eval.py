@@ -227,7 +227,7 @@ else:
     columns = ['run', 'n', 'rfr-rsq', 'rfr-mse', 'dt-rsq', 'dt-mse',
                'lr-rsq', 'lr-mse', 
             #    'dcr-mean', 'dcr-std'
-               ]
+               'disc']
     
     for i in range(len(sets)):
         data = sets[i]
@@ -259,7 +259,7 @@ else:
         results.append((names[i], len(data), 
             rsq_rf, mse_rf, rsq_dt, mse_dt, rsq_lr, mse_lr, 
             # dcr.mean(), dcr.std())
-                       ))
+                       disacc))
 
 df = pd.DataFrame(results, columns = columns)
 print(df)
