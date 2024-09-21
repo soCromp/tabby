@@ -238,8 +238,8 @@ class GReaT:
         # Start training
         logging.info("Start training...")
         great_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-        if self.efficient_finetuning_func is not None:
-           self.model = self.model.merge_and_unload()
+        #if self.efficient_finetuning_func is not None:
+        #   self.model = self.model.merge_and_unload()
         return great_trainer
 
     def sample(
