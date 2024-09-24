@@ -68,6 +68,7 @@ class GReaT:
         efficient_finetuning: str = "",
         moe = False,
         multihead = False,
+        create_model = True,
         **train_kwargs,
     ):
         """Initializes GReaT.
@@ -109,10 +110,10 @@ class GReaT:
         else:
             quantization_config = None
         
-        if accesstoken is not None:
+        if create_model and accesstoken is not None:
             self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto', token=accesstoken,
             quantization_config=quantization_config)
-        else:
+        elif create_model:
             self.model = AutoModelForCausalLM.from_pretrained(self.llm, device_map='auto',
             quantization_config=quantization_config)
         
@@ -304,7 +305,7 @@ class GReaT:
                 max_length=max_length,
                 do_sample=True,
                 temperature=temperature,
-                pad_token_id=50256,
+                pad_token_id=128255,
             )
 
             # Convert tokens back to tabular data
@@ -513,7 +514,7 @@ class GReaT:
             self.model.load_state_dict(torch.load(path))
 
     @classmethod
-    def load_from_dir(cls, path: str):
+    def load_from_dir(cls, path: str, model=None):
         """Load GReaT class
 
         Load trained GReaT model from directory.
@@ -530,16 +531,21 @@ class GReaT:
         with open(path + "/config.json", "r") as f:
             attributes = json.load(f)
 
-        # Create new be_great model instance
-        great = cls(attributes["llm"])
-
-        # Set all attributes
-        for k, v in attributes.items():
-            setattr(great, k, v)
 
         # Load model weights
         # great.model.load_state_dict(torch.load(path + "/model.pt", map_location="cpu"))
-        great.load_finetuned_model(os.path.join(path, 'model.pt'))
+        if model is None:
+            # Create new be_great model instance
+            great = cls(attributes["llm"], create_model=True)
+            great.load_finetuned_model(os.path.join(path, 'model.pt'))
+        else:
+            # Create new be_great model instance
+            great = cls(attributes["llm"], create_model=False)
+            great.model = model
+            
+        # Set all attributes
+        for k, v in attributes.items():
+            setattr(great, k, v)
 
         return great
 

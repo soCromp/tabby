@@ -97,7 +97,7 @@ def MOEModelForCausalLM(model, **kwargs):
         
         #generation forward
         def autocol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
-            EOS = 50258
+            EOS = 128257
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
@@ -127,8 +127,8 @@ def MOEModelForCausalLM(model, **kwargs):
         def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, cols_iterator=None, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
             # print('labels', labels)
-            PAD = 50256
-            EOS = 50258
+            PAD = 128255
+            EOS = 128257
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
@@ -207,7 +207,7 @@ def MOEModelForCausalLM(model, **kwargs):
             **model_kwargs,
         ):
             def get_next_token_scores(input_ids, next_token_logits, logits_processor, logits_warper):
-                EOS = 50258
+                EOS = 128257
                 # if input_ids[..., -1] == EOS:
                 #     next_token_scores = torch.full_like(next_token_logits, -1*float("Inf"))
                 #     next_token_scores[..., ?] = float("Inf")
@@ -274,7 +274,7 @@ def MOEModelForCausalLM(model, **kwargs):
             **model_kwargs,
         ):
             # init values
-            EOS = 50258
+            EOS = 128257 #50258
             expert = 0 # used to index into the list saying the order of cols/experts
             if self.token_heads is None: 
                 token_heads = list(range(len(self.column_names_tokens)-1))
@@ -296,7 +296,8 @@ def MOEModelForCausalLM(model, **kwargs):
                 )
                 stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
             logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
-            pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+            pad_token_id = 128255
+            # pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
             eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
             if isinstance(eos_token_id, int):
                 eos_token_id = [eos_token_id]
