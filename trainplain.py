@@ -352,7 +352,7 @@ elif not args.great:
                                   save_total_limit = 3, metric_for_best_model='eval_loss',)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
-        trainer.train()
+        trainer.train(resume_from_checkpoint=args.resume)
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
         valresult = trainer.evaluate(valdataset)
