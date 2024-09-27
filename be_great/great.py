@@ -137,7 +137,9 @@ class GReaT:
             lora_config = LoraConfig(
                 r=1,  
                 lora_alpha=256,
-                target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'],
+                target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
+                                #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
+                                ],
                 lora_dropout=0.05,
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
