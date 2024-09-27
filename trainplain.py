@@ -44,8 +44,10 @@ parser.add_argument('-r', '--pre', action='store_true',
                     default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
 parser.add_argument('-c', '--ec', action='store_true',
                     default=False, help='whether to Encode the Categorical columns à la Tabula')
-parser.add_argument('-llama', '--llama', action='store_true',
+parser.add_argument('-l8', '--llama8', action='store_true',
                     default=False, help='use llama3 8B')
+parser.add_argument('-l1', '--llama1', action='store_true',
+                    default=False, help='use llama3.2 1B')
 parser.add_argument('-gpt2', '--gpt2', action='store_true',
                     default=False, help='use non-distilled GPT2')
 parser.add_argument('-lora', '--lora', action='store_true',
@@ -130,8 +132,10 @@ else:
     
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
-elif args.llama:
+elif args.llama8:
     modelname = 'meta-llama/Meta-Llama-3-8B'
+elif args.llama1:
+    modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
     modelname = 'gpt2'
 else:
