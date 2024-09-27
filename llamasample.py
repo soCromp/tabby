@@ -1,7 +1,4 @@
-# %%
-%load_ext autoreload
-%autoreload 2
-%reload_ext autoreload
+import sys
 
 import os
 os.environ['TRANSFORMERS_CACHE'] = './cache/'
@@ -27,6 +24,10 @@ import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
 
+path = sys.argv[-2]
+outpath = sys.argv[-1]
+print('will read from', path, 'and save to', outpath)
+
 # %%
 modelname = 'meta-llama/Meta-Llama-3-8B'
 tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
@@ -42,7 +43,7 @@ dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map=
             bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16))
 
 # %%
-great= GReaT.load_from_dir('/home/sonia/tabby/ckpts/house-new-tiny/llamamh/3',
+great= GReaT.load_from_dir(path,
                            model = dgpt2)
 
 # %%
@@ -80,7 +81,7 @@ def apply_efficient_finetuning(model):
 great.model = apply_efficient_finetuning(great.model)
 
 # %%
-ckpt_path = '/home/sonia/tabby/ckpts/house-new-tiny/llamamh/3/model.pt'
+ckpt_path = os.path.join(path, 'model.pt')
 sd = torch.load(ckpt_path)
 # dgpt2copy.load_state_dict(torch.load(ckpt_path, weights_only=True))
 sd.keys()
@@ -97,9 +98,12 @@ great.tokenizer = tokenizer
 # great.model.set_generation_mode(token_heads=list(range(6)), column_names_tokens=column_names_tokens)
 
 # %%
-great.sample(10, k=1, max_length = 1000)
+outs = great.sample(10000, k=1, max_length = 1000)
 
 # %%
-
-
-
+pre = len('<|begin_of_text|>')
+outs = [s[pre:] for s in outs]
+with open(outpath, 'w') as f:
+    f.write('\n'.join(outs))
+with open(os.path.join(path, 'samples.txt'), 'w') as f:
+    f.write('\n'.join(outs))
