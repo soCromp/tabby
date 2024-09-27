@@ -420,7 +420,7 @@ else: #use great
             experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
             load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
             save_total_limit = 1, metric_for_best_model='eval_loss',
-            efficient_finetuning=ef, fp16=args.llama)
+            efficient_finetuning=ef, bf16=args.llama1 or args.llama8)
         trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)
         
