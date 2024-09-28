@@ -311,6 +311,7 @@ elif not args.great:
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
         print('applying lora, model type now', type(model))
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
         
     print(model)
     
