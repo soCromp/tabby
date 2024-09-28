@@ -277,7 +277,7 @@ elif not args.great:
             bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
         lora_config = LoraConfig(
             r=1,  
-            lora_alpha=128,
+            lora_alpha=256,
             target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
                             #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
                             ],
