@@ -7,7 +7,7 @@ from be_great.multihead_models import MOEModelForCausalLM
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
+from transformers import AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback, BitsAndBytesConfig
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
 from matplotlib import pyplot as plt
@@ -21,6 +21,8 @@ from be_great.great_trainer import GReaTTrainer
 import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
+
     
 parser = argparse.ArgumentParser(
                     prog='Train-Plain',
@@ -268,11 +270,29 @@ elif not args.great:
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
+    
+    if args.lora:
+        quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
+        lora_config = LoraConfig(
+            r=1,  
+            lora_alpha=256,
+            target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
+                            #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
+                            ],
+            lora_dropout=0.05,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+        )
+    else:
+        quantization_config = None
 
     if accesstoken is not None:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken)
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken,
+                                                                  quantization_config=quantization_config)
     else:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto',)
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto',
+                                                                  quantization_config=quantization_config)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -284,6 +304,12 @@ elif not args.great:
         model.set_train_mode()
     else:
         model = dgpt2
+        
+    if args.lora:
+        model = prepare_model_for_kbit_training(model)
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
+        print('applying lora, model type now', type(model))
         
     print(model)
     
@@ -345,10 +371,13 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 3, metric_for_best_model='eval_loss',)
+                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train()
+        
+        if args.lora:
+            model = model.merge_and_unload()
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
         valresult = trainer.evaluate(valdataset)
