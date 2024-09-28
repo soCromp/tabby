@@ -289,10 +289,10 @@ elif not args.great:
         quantization_config = None
 
     if accesstoken is not None:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken,
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda', token=accesstoken,
                                                                   quantization_config=quantization_config)
     else:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto',
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='cuda',
                                                                   quantization_config=quantization_config)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
