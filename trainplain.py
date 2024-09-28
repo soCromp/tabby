@@ -372,7 +372,8 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False,)
+                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False,
+                                  gradient_checkpointing=False)
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, 
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train()
