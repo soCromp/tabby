@@ -22,6 +22,7 @@ import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
+from accelerate import PartialState
 
     
 parser = argparse.ArgumentParser(
@@ -289,10 +290,10 @@ elif not args.great:
         quantization_config = None
 
     if accesstoken is not None:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, token=accesstoken,
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, token=accesstoken, device_map={"": PartialState().process_index},
                                                                   quantization_config=quantization_config)
     else:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname,
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map={"": PartialState().process_index},
                                                                   quantization_config=quantization_config)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
