@@ -152,7 +152,8 @@ def fill_na(df):
     for col in df:
         ## Don't fill numerical, or it'll mess with the distribution
         if df[col].dtype not in [int, float]:
-            df[col].fillna("?", inplace=True)
+            # df[col].fillna("?", inplace=True)
+            df.fillna({col: '?'}, inplace=True)
 fill_na(data)
 fill_na(valdata)
 if alldata is not None:
@@ -206,9 +207,16 @@ label_encoder_list = None
 if args.ec: # use tabula ordinalization of categorical columns
     if dataconfig['task'] == 'regression':
         label_encoder_list = make_label_encoders(alldata, dataconfig['ords'])
+        data[dataconfig['ords']] = data[dataconfig['ords']].map(lambda x: str(x))
+        valdata[dataconfig['ords']] = valdata[dataconfig['ords']].map(lambda x: str(x))
     elif dataconfig['task'] == 'classification':
         label_encoder_list = make_label_encoders(alldata, dataconfig['ords']+dataconfig['labs'])
+        data[dataconfig['ords']+dataconfig['labs']] = \
+            data[dataconfig['ords']+dataconfig['labs']].map(lambda x: str(x))
+        valdata[dataconfig['ords']+dataconfig['labs']] = \
+            valdata[dataconfig['ords']+dataconfig['labs']].map(lambda x: str(x))
     alldata = None
+    print(label_encoder_list[-1]['label_encoder'].classes_)
     data = encode_categorical_columns(data, label_encoder_list)
     valdata = encode_categorical_columns(valdata, label_encoder_list)
     
@@ -396,11 +404,8 @@ elif not args.great:
                                   save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
-        trainer.train()
-        
-        # if args.lora:
-        #     model = model.merge_and_unload()
-        print(model)
+        trainer.train(resume_from_checkpoint=args.resume)
+
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
         valresult = trainer.evaluate(valdataset)

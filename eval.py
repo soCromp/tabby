@@ -40,13 +40,14 @@ def to_float_or_nan(value):
         return np.nan
     
 if dataconfig['task'] == 'classification':
-    labvals = set([l.strip() for l in train[labcols[0]].unique()]) | \
-                set([l.strip() for l in test[labcols[0]].unique()])
+    labvals = set([str(l).strip() for l in train[labcols[0]].unique()]) | \
+                set([str(l).strip() for l in test[labcols[0]].unique()])
     # print(labvals)
     
 def preprocess_df(df, categoriesdict):
     # remove extra spaces around strings, eg ' dog' -> 'dog'
     df = df.map(lambda x: x.strip() if type(x) == str else x)
+    df[dataconfig['ords']] = df[dataconfig['ords']].map(lambda x: str(x))
     df.loc[:,numcols] = df.loc[:,numcols].map(to_float_or_nan)
     df.loc[:,ordcols] = df.loc[:,ordcols].fillna('?')
     df.loc[:,ordcols] = df.loc[:,ordcols].map(lambda x: x.strip())
@@ -54,6 +55,7 @@ def preprocess_df(df, categoriesdict):
         categoriesdict[col] = categoriesdict.get(col, []) + df[col].unique().tolist()
     
     if dataconfig['task'] == 'classification':
+        df[dataconfig['labs']] = df[dataconfig['labs']].map(lambda x: str(x))
         df = df[df[labcols[0]].isin(labvals)]
     else:
         df.loc[:,labcols[0]] = df.loc[:,labcols[0]].map(to_float_or_nan)
@@ -167,6 +169,7 @@ if dataconfig['task'] == 'classification':
         complete_pipeline.fit(trainset[ordcols+numcols], preprocessed_labels)
         return complete_pipeline
     
+    test[dataconfig['ords']+dataconfig['labs']] = test[dataconfig['ords']+dataconfig['labs']].map(lambda x: str(x))
     labels = lb.fit_transform(test[labcols[0]])
     results = []
     columns = ['run', 'n', 'rfc-acc', 'dt-acc', 'lr-acc', 
@@ -177,6 +180,7 @@ if dataconfig['task'] == 'classification':
     for i in range(len(sets)):
         data = sets[i]
         print(names[i])
+        data[dataconfig['ords']+dataconfig['labs']] = data[dataconfig['ords']+dataconfig['labs']].map(lambda x: str(x))
         # random forest
         rf = create_classification_pipeline(data, type='rfc')
         score_rf = rf.score(test[ordcols+numcols], labels)
@@ -193,7 +197,7 @@ if dataconfig['task'] == 'classification':
         # dcr = distance_to_closest_record(data, train)
         
         # discrimination
-        disacc = discriminate(data, train)
+        disacc = abs(discriminate(data, train)-0.5)
         
         results.append((names[i], len(data), score_rf, score_dt, score_lr,
             # dcr.mean(), dcr.std(), 
@@ -254,7 +258,7 @@ else:
         # dcr = distance_to_closest_record(data, train)
         
         # discrimination
-        disacc = discriminate(data, train)
+        disacc = abs(discriminate(data, train)-0.5)
         
         results.append((names[i], len(data), 
             rsq_rf, mse_rf, rsq_dt, mse_dt, rsq_lr, mse_lr, 
