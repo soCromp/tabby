@@ -7,9 +7,11 @@ from be_great.multihead_models import MOEModelForCausalLM
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
+from transformers import AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback, BitsAndBytesConfig
+from transformers import DataCollatorForTokenClassification
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
+from torch.nn.utils.rnn import pad_sequence
 from matplotlib import pyplot as plt
 from tqdm import tqdm 
 import argparse
@@ -21,6 +23,9 @@ from be_great.great_trainer import GReaTTrainer
 import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
+from accelerate import PartialState
+
     
 parser = argparse.ArgumentParser(
                     prog='Train-Plain',
@@ -44,8 +49,10 @@ parser.add_argument('-r', '--pre', action='store_true',
                     default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
 parser.add_argument('-c', '--ec', action='store_true',
                     default=False, help='whether to Encode the Categorical columns à la Tabula')
-parser.add_argument('-llama', '--llama', action='store_true',
+parser.add_argument('-l8', '--llama8', action='store_true',
                     default=False, help='use llama3 8B')
+parser.add_argument('-l1', '--llama1', action='store_true',
+                    default=False, help='use llama3.2 1B')
 parser.add_argument('-gpt2', '--gpt2', action='store_true',
                     default=False, help='use non-distilled GPT2')
 parser.add_argument('-lora', '--lora', action='store_true',
@@ -125,13 +132,16 @@ if args.train or args.valtrain:
 if os.path.exists('./accesstoken.txt'):
     with open('./accesstoken.txt', 'r') as f:
         accesstoken = f.read()
+    accesstoken = accesstoken.split(' ')[-1][:-1]
 else:
     accesstoken = None
     
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
-elif args.llama:
+elif args.llama8:
     modelname = 'meta-llama/Meta-Llama-3-8B'
+elif args.llama1:
+    modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
     modelname = 'gpt2'
 else:
@@ -272,11 +282,29 @@ elif not args.great:
     tokenizer.pad_token = tokenizer.eos_token
     special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
+    
+    if args.lora:
+        quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
+            bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
+        lora_config = LoraConfig(
+            r=1,  
+            lora_alpha=256,
+            target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
+                            #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
+                            ],
+            lora_dropout=0.05,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+        )
+    else:
+        quantization_config = None
 
     if accesstoken is not None:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto', token=accesstoken)
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, token=accesstoken, device_map={"": PartialState().process_index},
+                                                                  quantization_config=quantization_config)
     else:
-        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map='auto',)
+        dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map={"": PartialState().process_index},
+                                                                  quantization_config=quantization_config)
     dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -288,6 +316,13 @@ elif not args.great:
         model.set_train_mode()
     else:
         model = dgpt2
+        
+    if args.lora:
+        model = prepare_model_for_kbit_training(model)
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
+        print('applying lora, model type now', type(model))
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
         
     print(model)
     
@@ -336,23 +371,41 @@ elif not args.great:
                     return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                             'labels': tokenized_text.input_ids.squeeze()}
                     
+                    
+        class CustomDataCollator(DataCollatorForTokenClassification):
+            def __call__(self, features):
+                input_ids = [item['input_ids'] for item in features]
+                labels = [item['labels'] for item in features]
+                
+                # Pad sequences
+                input_ids_padded = pad_sequence(input_ids, batch_first=True, padding_value=tokenizer.pad_token_id)
+                labels_padded = pad_sequence(labels, batch_first=True, padding_value=tokenizer.pad_token_id)
+
+                return {
+                    'input_ids': input_ids_padded,
+                    'labels': labels_padded
+                }
+        
+
+                    
 
         text_data = data.apply(row_to_col_sentences, axis=1).tolist()
         do_moe_format = args.moe or args.mh
-        dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
+        dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format,)
         
         text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
         valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         
         
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
-                                  per_device_train_batch_size=1, per_device_eval_batch_size=1, 
+                                  per_device_train_batch_size=4, per_device_eval_batch_size=4, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 3, metric_for_best_model='eval_loss',)
-        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
+                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
+
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
         
         valresult = trainer.evaluate(valdataset)
@@ -364,17 +417,18 @@ elif not args.great:
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
     if not args.train and not args.valtrain: # load in checkpoint so we can validate or sample
-        # ckpt_ints = [int(f.split('.')[0]) for f in os.listdir(outpath) if f.endswith('.pt')] #steps where epochs saved
-        # max_ckpt = max(ckpt_ints)
         ckpt_path = os.path.join(outpath, 'model.pt')
         print('loading from', ckpt_path)
-        model.load_state_dict(torch.load(ckpt_path))
-        # model.to(device)
+        sd = torch.load(ckpt_path)
+        for name, param in model.named_parameters():
+            param.data.copy_(sd[name])
         
     if args.validation:
         raise NotImplementedError()
 
     if args.n_samples > 0:
+        if args.lora:
+            model = model.merge_and_unload()
         model.eval()
         column_names_tokens = tokenizer(list(data.columns)).input_ids
         if args.moe or args.mh:
@@ -424,7 +478,7 @@ else: #use great
             experiment_dir=outpath, multihead=args.mh, moe=args.moe, learning_rate=args.lr,
             load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
             save_total_limit = 1, metric_for_best_model='eval_loss',
-            efficient_finetuning=ef, fp16=args.llama)
+            efficient_finetuning=ef, bf16=args.llama1 or args.llama8)
         trainer = model.fit(data, eval_dataset=valdata, conditional_col=dataconfig['labs'][0], resume_from_checkpoint=args.resume)
         model.save(outpath)
         
