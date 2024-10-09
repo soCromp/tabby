@@ -53,14 +53,19 @@ def MOEModelForCausalLM(model, **kwargs):
             self.col = Integer()
             self.col.value = 0
             self.num_experts=1
+            self.PAD = -1 # not initialized
+            self.EOC = -1 # not initialized
             
             
-        def from_other(model, num_experts=1, moe=False, multihead=False):
+        def from_other(model, pad, eoc, num_experts=1, moe=False, multihead=False):
             # https://stackoverflow.com/questions/597199/converting-an-object-into-a-subclass-in-python
-            moemodel = deepcopy(model)
+            # moemodel = deepcopy(model)
+            moemodel = model
             moemodel.__class__ = MOEModelForCausalLM
             moemodel.col = Integer()
             moemodel.num_experts = num_experts
+            moemodel.PAD = pad 
+            moemodel.EOC = eoc
             
             if moe:
                 if type(model) == GPT2LMHeadModel:
@@ -97,21 +102,14 @@ def MOEModelForCausalLM(model, **kwargs):
         
         #generation forward
         def autocol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
-            EOS = 128257
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
             mask = torch.ones_like(prompt)
             
-            # print('mlps col', self.col.value)
             transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
             hidden_states = transformer_outputs[0]
             lm_logits = lm_head(hidden_states)
-                    
-            # print(lm_logits[:, -1].argmax().item())
-            # if lm_logits[:, -1].argmax().item() == EOS and self.col.value < self.num_experts-1:
-            #     # print('to next col')
-            #     self.col.value +=1
             
             
             return MOECausalLMOutputWithPast(
@@ -126,25 +124,21 @@ def MOEModelForCausalLM(model, **kwargs):
         #training forward
         def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, cols_iterator=None, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
-            # print('labels', labels)
-            PAD = 128255
-            EOS = 128257
+
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
             if labels is not None:
-                prompt = torch.cat([prompt[prompt!=PAD].unsqueeze(0), 
-                                    labels[:,0,:][labels[:,0,:] != PAD].unsqueeze(0)], axis=1)
+                prompt = torch.cat([prompt[prompt!=self.PAD].unsqueeze(0), 
+                                    labels[:,0,:][labels[:,0,:] != self.PAD].unsqueeze(0)], axis=1)
             
             if cols_iterator == None:
                 cols_iterator = range(self.num_experts)
-            elif len(cols_iterator.shape) == 2: # because huggingface trainor wraps cols_iterator into extra []
+            elif len(cols_iterator.shape) == 2: # because huggingface trainer wraps cols_iterator into extra []
                 cols_iterator = cols_iterator[0]
-            # print(cols_iterator)
             
             collosses = []
             lossavg = None
-            # print(0, prompt)
             mask = torch.ones_like(prompt)
             for i in cols_iterator:
                 self.col.value = i
@@ -166,13 +160,13 @@ def MOEModelForCausalLM(model, **kwargs):
                 # update prompt and mask
                 if i < self.num_experts-1:
                     if labels is not None: #in training mode, where labels are known
-                        prompt = torch.cat([prompt, labels[:,i+1,:][labels[:,i+1,:] != PAD].unsqueeze(0)], axis=1)
+                        prompt = torch.cat([prompt, labels[:,i+1,:][labels[:,i+1,:] != self.PAD].unsqueeze(0)], axis=1)
                     else: # in inference mode, where a column's prompt is the preds from the prior columns
                         predtoks = lm_logits.argmax(-1)
-                        wheredone = torch.where(predtoks == EOS)[-1] # places it predicts the EOS token
-                        if len(wheredone) == 0: #didn't find EOS in the predicted tokens
-                            eostoks = torch.full((prompt.shape[0],1), EOS) # add EOS at end of col since model didn't so itself
-                            prompt = torch.cat([prompt, predtoks, eostoks])
+                        wheredone = torch.where(predtoks == self.EOC)[-1] # places it predicts it's done with the current column
+                        if len(wheredone) == 0: #didn't find EOC in the predicted tokens
+                            eoctoks = torch.full((prompt.shape[0],1), self.EOC) # add EOC at end of col since model didn't so itself
+                            prompt = torch.cat([prompt, predtoks, eoctoks])
                         else:
                             doneind = wheredone[0].item() # first place it predicts to be done
                             prompt = torch.cat([prompt, predtoks[:, :doneind+1]])
@@ -207,10 +201,6 @@ def MOEModelForCausalLM(model, **kwargs):
             **model_kwargs,
         ):
             def get_next_token_scores(input_ids, next_token_logits, logits_processor, logits_warper):
-                EOS = 128257
-                # if input_ids[..., -1] == EOS:
-                #     next_token_scores = torch.full_like(next_token_logits, -1*float("Inf"))
-                #     next_token_scores[..., ?] = float("Inf")
                 next_token_scores = logits_processor(input_ids, next_token_logits)
                 next_token_scores = logits_warper(input_ids, next_token_scores)
                 return next_token_scores
@@ -274,7 +264,6 @@ def MOEModelForCausalLM(model, **kwargs):
             **model_kwargs,
         ):
             # init values
-            EOS = 128257 #50258
             expert = 0 # used to index into the list saying the order of cols/experts
             if self.token_heads is None: 
                 token_heads = list(range(len(self.column_names_tokens)-1))
@@ -296,12 +285,12 @@ def MOEModelForCausalLM(model, **kwargs):
                 )
                 stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
             logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
-            pad_token_id = 128255
-            # pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
-            eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
-            if isinstance(eos_token_id, int):
-                eos_token_id = [eos_token_id]
-            eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
+
+            pad_token_id = pad_token_id if pad_token_id is not None else self.PAD
+            eoc_token_id = eos_token_id if eos_token_id is not None else self.EOC
+            if isinstance(eoc_token_id, int):
+                eoc_token_id = [eoc_token_id]
+            eoc_token_id_tensor = torch.tensor(eoc_token_id).to(input_ids.device) #if eoc_token_id is not None else None
             output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
             output_logits = output_logits if output_logits is not None else self.generation_config.output_logits
             output_attentions = (
@@ -384,7 +373,7 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
-                if input_ids[..., -1].item() == EOS and expert < self.num_experts-1:
+                if input_ids[..., -1].item() == self.EOC and expert < self.num_experts-1:
                     expert += 1
                     self.col.value = token_heads[expert]
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
@@ -394,13 +383,13 @@ def MOEModelForCausalLM(model, **kwargs):
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) == 0: # inserted this whole column name
                         insert_column_name = False
-                elif input_ids[..., -1].item() == EOS and expert == self.num_experts-1: # this line is done
+                elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
                     break
 
                 # finished sentences should have their next token be a padding token
-                if eos_token_id is not None:
+                if eoc_token_id is not None:
                     if pad_token_id is None:
-                        raise ValueError("If `eos_token_id` is defined, make sure that `pad_token_id` is defined.")
+                        raise ValueError("If `eoc_token_id` is defined, make sure that `pad_token_id` is defined.")
                     next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
                 # update generated ids, model inputs, and length for next step
@@ -413,10 +402,10 @@ def MOEModelForCausalLM(model, **kwargs):
                     is_encoder_decoder=self.config.is_encoder_decoder,
                 )
 
-                # if eos_token was found in one sentence, set sentence to finished
-                if eos_token_id_tensor is not None:
+                # if eoc_token was found in one sentence, set sentence to finished
+                if eoc_token_id_tensor is not None:
                     unfinished_sequences = unfinished_sequences.mul(
-                        next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
+                        next_tokens.tile(eoc_token_id_tensor.shape[0], 1).ne(eoc_token_id_tensor.unsqueeze(1)).prod(dim=0)
                     )
 
                 unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)

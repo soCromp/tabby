@@ -66,7 +66,7 @@ parser.add_argument('--parse', action='store_true',
 parser.add_argument('-validation', '--validation', action='store_true',
                     help='just run the validation- for debugging purposes')
 parser.add_argument('-resume', '--resume', action='store_true', default=False,
-                    help='resume great training run after kevin unplugs your router')
+                    help='resume training run')
 parser.add_argument('-e', '--epochs', type=int,
                     default=50, help='number of epochs to train')
 args = parser.parse_args()
@@ -107,8 +107,8 @@ else:
         raise Exception('unsupported dataset', args.dataset)
     
 if args.valtrain:
-    data = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:100,-3:]
-    valdata = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:100,-3:]
+    data = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:,-3:]
+    valdata = pd.read_csv(os.path.join(file_path, 'val.csv')).iloc[:,-3:]
     alldata = None
     # used *uniquely* for making sure all possible values are encoded
     # with tabula:
@@ -280,7 +280,7 @@ elif not args.great:
     else:
         tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
-    special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+    special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
     num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
     
     if args.lora:
@@ -290,7 +290,6 @@ elif not args.great:
             r=1,  
             lora_alpha=256,
             target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
-                            #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
                             ],
             lora_dropout=0.05,
             bias="none",
@@ -311,7 +310,8 @@ elif not args.great:
     if args.moe or args.mh:
         num_experts = len(data.columns)
         print('create', num_experts, 'head moe model')
-        dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, moe=args.moe, multihead=args.mh)
+        dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, moe=args.moe, multihead=args.mh, 
+                                        pad=tokenizer.pad_token_id, eoc=len(tokenizer)-1)
         model = dgpt2copy # don't forget to change tokenizer name and optimizer too
         model.set_train_mode()
     else:
