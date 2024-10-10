@@ -226,7 +226,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split('<EOS>') # remove newline at end
+        entries = l[:-1].split('<EOC>') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -342,7 +342,7 @@ elif not args.great:
         # Data stuff
         # Preprocess the data: Convert each row to a string
         def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + '<EOS>' for col, val in zip(row.index, row.values)]
+            return [str(col).strip() + " is " + str(val).strip() + '<EOC>' for col, val in zip(row.index, row.values)]
 
         class TextDataset(Dataset):
             def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
@@ -359,7 +359,7 @@ elif not args.great:
                 if self.cols is None:
                     text = row_to_col_sentences(data.iloc[idx])
                 else:
-                    text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39.', 'workclass is State-gov.', ...]
+                    text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
                 if self.do_moe_format:
                     tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt")
                     prompt = torch.full((1,), #batch_size x token
@@ -398,7 +398,7 @@ elif not args.great:
         
         
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
-                                  per_device_train_batch_size=4, per_device_eval_batch_size=4, 
+                                  per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
                                   save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
@@ -427,6 +427,9 @@ elif not args.great:
         raise NotImplementedError()
 
     if args.n_samples > 0:
+        from transformers.utils import logging
+        logging.set_verbosity_error()
+        
         if args.lora:
             model = model.merge_and_unload()
         model.eval()
@@ -443,7 +446,8 @@ elif not args.great:
         for i in tqdm(range(0, args.n_samples, sbs)):
             
             toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000,#dataconfig['max_col_length']*len(dataconfig['cols']), 
-                                pad_token_id=tokenizer.eos_token_id)[...,1:] # remove BOS token
+                                # pad_token_id=tokenizer.eos_token_id
+                                )[...,1:] # remove BOS token
             outs = tokenizer.batch_decode(toks)
             samples.extend(outs)
             if len(samples)%100 == 0:
@@ -455,8 +459,9 @@ elif not args.great:
             f.write('\n'.join(samples))
             
         print('samples saved to', os.path.join(outpath, 'samples.txt'))
-        samples = [s+'\n' for s in samples]
-        parse(samples, args, file_path, outpath)
+        with open(os.path.join(args.path, 'samples.txt'), 'r') as f:
+            raws = f.readlines()
+        parse(raws, args, file_path, outpath)
         
 else: #use great
     if args.train or args.valtrain:

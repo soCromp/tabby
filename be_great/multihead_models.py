@@ -287,7 +287,7 @@ def MOEModelForCausalLM(model, **kwargs):
             logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
 
             pad_token_id = pad_token_id if pad_token_id is not None else self.PAD
-            eoc_token_id = eos_token_id if eos_token_id is not None else self.EOC
+            eoc_token_id = self.EOC # eos_token_id if eos_token_id is not None else self.EOC
             if isinstance(eoc_token_id, int):
                 eoc_token_id = [eoc_token_id]
             eoc_token_id_tensor = torch.tensor(eoc_token_id).to(input_ids.device) #if eoc_token_id is not None else None
@@ -329,6 +329,8 @@ def MOEModelForCausalLM(model, **kwargs):
             
             insert_column_name = False
             column_names_tokens = deepcopy(self.column_names_tokens) # since we're popping and don't want to change original
+            
+            # print(self.PAD, self.EOC, pad_token_id, eoc_token_id)
             
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
                 # print('self.col.value', self.col.value)
@@ -373,24 +375,27 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
+                # print(input_ids[..., -1].item())
                 if input_ids[..., -1].item() == self.EOC and expert < self.num_experts-1:
                     expert += 1
                     self.col.value = token_heads[expert]
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) > 0: # more tokens to keep inserting
                         insert_column_name = True 
+                    # print('to expert', self.col.value, 'input ids shape', input_ids.shape)
                 elif insert_column_name:
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) == 0: # inserted this whole column name
                         insert_column_name = False
                 elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
+                    # print('done with line', 'input ids shape', input_ids.shape)
                     break
 
                 # finished sentences should have their next token be a padding token
-                if eoc_token_id is not None:
-                    if pad_token_id is None:
-                        raise ValueError("If `eoc_token_id` is defined, make sure that `pad_token_id` is defined.")
-                    next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
+                # if eoc_token_id is not None:
+                #     if pad_token_id is None:
+                #         raise ValueError("If `eoc_token_id` is defined, make sure that `pad_token_id` is defined.")
+                #     next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
                 # update generated ids, model inputs, and length for next step
                 input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
@@ -403,13 +408,13 @@ def MOEModelForCausalLM(model, **kwargs):
                 )
 
                 # if eoc_token was found in one sentence, set sentence to finished
-                if eoc_token_id_tensor is not None:
-                    unfinished_sequences = unfinished_sequences.mul(
-                        next_tokens.tile(eoc_token_id_tensor.shape[0], 1).ne(eoc_token_id_tensor.unsqueeze(1)).prod(dim=0)
-                    )
+                # if eoc_token_id_tensor is not None:
+                #     unfinished_sequences = unfinished_sequences.mul(
+                #         next_tokens.tile(eoc_token_id_tensor.shape[0], 1).ne(eoc_token_id_tensor.unsqueeze(1)).prod(dim=0)
+                #     )
 
-                unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
-                this_peer_finished = unfinished_sequences.max() == 0
+                # unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
+                # this_peer_finished = unfinished_sequences.max() == 0
 
             if streamer is not None:
                 streamer.end()
