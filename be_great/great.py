@@ -193,13 +193,14 @@ class GReaT:
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
         
-        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
         num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
         self.model.resize_token_embeddings(len(self.tokenizer))
             
         if self.moe or self.multihead:
             self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1], 
-                                             moe=self.moe, multihead=self.multihead)
+                                             moe=self.moe, multihead=self.multihead, 
+                                             pad=self.tokenizer.pad_token_id, eoc=len(self.tokenizer)-1)
             self.model.set_train_mode()
             print(df.shape[1], 'experts model')
             print(self.model)
@@ -368,7 +369,7 @@ class GReaT:
                 max_length=max_length,
                 do_sample=True,
                 temperature=temperature,
-                pad_token_id=50256,
+                # pad_token_id=50256,
             )
             generated_data.append(torch.squeeze(gen).cpu())
 
@@ -498,7 +499,7 @@ class GReaT:
         Args:
             path: Path to the fine-tuned model
         """
-        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOS>'}
+        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
         num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
         self.model.resize_token_embeddings(len(self.tokenizer))
         
@@ -510,7 +511,8 @@ class GReaT:
                 num_experts = len(set([int(k.split('.')[-2]) for k in sd.keys() if 'lm_head.layers' in k]))
             print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts, 
-                                             moe=self.moe, multihead=self.multihead)
+                                             moe=self.moe, multihead=self.multihead, 
+                                             pad=self.tokenizer.pad_token_id, eoc=len(self.tokenizer)-1)
             self.model.load_state_dict(sd)
         else:
             self.model.load_state_dict(torch.load(path))

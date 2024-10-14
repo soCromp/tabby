@@ -361,12 +361,14 @@ elif not args.great:
                 else:
                     text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
                 if self.do_moe_format:
-                    tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt")
+                    tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
+                                                    add_special_tokens=False)
                     prompt = torch.full((1,), #batch_size x token
                                         self.tokenizer.bos_token_id)
                     return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
                 else:
                     text = tokenizer.bos_token + ''.join(text)
+                    # print(text)
                     tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
                     return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                             'labels': tokenized_text.input_ids.squeeze()}
@@ -402,7 +404,7 @@ elif not args.great:
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
                                   save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
-        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, data_collator=CustomDataCollator(tokenizer=tokenizer),
+        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
 
@@ -433,21 +435,24 @@ elif not args.great:
         if args.lora:
             model = model.merge_and_unload()
         model.eval()
-        column_names_tokens = tokenizer(list(data.columns)).input_ids
+        column_names_tokens = tokenizer(list(data.columns), add_special_tokens=False).input_ids
         if args.moe or args.mh:
             token_heads = list(range( len(data.columns) ))
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
             sbs = 1
         else: 
-            sbs = min(100, args.n_samples)
+            sbs = min(1, args.n_samples)
 
         inputs = torch.full((sbs, 1), tokenizer.bos_token_id).to(model.device)
         samples = []
+        startind = 1 # remove BOS token
+        if (args.llama1 or args.llama8) and (args.moe or args.mh):
+            startind=2
         for i in tqdm(range(0, args.n_samples, sbs)):
             
             toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000,#dataconfig['max_col_length']*len(dataconfig['cols']), 
                                 # pad_token_id=tokenizer.eos_token_id
-                                )[...,1:] # remove BOS token
+                                )[...,startind:] # remove BOS token
             outs = tokenizer.batch_decode(toks)
             samples.extend(outs)
             if len(samples)%100 == 0:
