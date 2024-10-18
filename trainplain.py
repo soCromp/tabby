@@ -226,7 +226,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split('<EOC>') # remove newline at end
+        entries = l[:-1].split(';') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -280,8 +280,8 @@ elif not args.great:
     else:
         tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
-    special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
-    num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
+    # special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
+    # num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
     
     if args.lora:
         quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
@@ -311,7 +311,7 @@ elif not args.great:
         num_experts = len(data.columns)
         print('create', num_experts, 'head moe model')
         dgpt2copy = MOEModelForCausalLM(dgpt2, num_experts=num_experts, moe=args.moe, multihead=args.mh, 
-                                        pad=tokenizer.pad_token_id, eoc=len(tokenizer)-1)
+                                        pad=tokenizer.pad_token_id, eoc=tokenizer(';', add_special_tokens=False).input_ids[0])
         model = dgpt2copy # don't forget to change tokenizer name and optimizer too
         model.set_train_mode()
     else:
@@ -342,7 +342,7 @@ elif not args.great:
         # Data stuff
         # Preprocess the data: Convert each row to a string
         def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + '<EOC>' for col, val in zip(row.index, row.values)]
+            return [str(col).strip() + " is " + str(val).strip() + ';' for col, val in zip(row.index, row.values)]
 
         class TextDataset(Dataset):
             def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
@@ -436,6 +436,7 @@ elif not args.great:
             model = model.merge_and_unload()
         model.eval()
         column_names_tokens = tokenizer(list(data.columns), add_special_tokens=False).input_ids
+        print(list(data.columns), column_names_tokens)
         if args.moe or args.mh:
             token_heads = list(range( len(data.columns) ))
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
@@ -445,9 +446,9 @@ elif not args.great:
 
         inputs = torch.full((sbs, 1), tokenizer.bos_token_id).to(model.device)
         samples = []
-        startind = 1 # remove BOS token
-        if (args.llama1 or args.llama8) and (args.moe or args.mh):
-            startind=2
+        startind = 0 # remove BOS token
+        # if args.moe or args.mh:
+        #     startind=2
         for i in tqdm(range(0, args.n_samples, sbs)):
             
             toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000,#dataconfig['max_col_length']*len(dataconfig['cols']), 
