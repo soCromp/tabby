@@ -106,7 +106,7 @@ def MOEModelForCausalLM(model, **kwargs):
             
             prompt = deepcopy(input_ids) #bs x tokens
             mask = torch.ones_like(prompt)
-            print(prompt)
+            # print(prompt)
             
             transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
             hidden_states = transformer_outputs[0]
@@ -163,14 +163,7 @@ def MOEModelForCausalLM(model, **kwargs):
                     if labels is not None: #in training mode, where labels are known
                         prompt = torch.cat([prompt, labels[:,i+1,:][labels[:,i+1,:] != self.PAD].unsqueeze(0)], axis=1)
                     else: # in inference mode, where a column's prompt is the preds from the prior columns
-                        predtoks = lm_logits.argmax(-1)
-                        wheredone = torch.where(predtoks == self.EOC)[-1] # places it predicts it's done with the current column
-                        if len(wheredone) == 0: #didn't find EOC in the predicted tokens
-                            eoctoks = torch.full((prompt.shape[0],1), self.EOC) # add EOC at end of col since model didn't so itself
-                            prompt = torch.cat([prompt, predtoks, eoctoks])
-                        else:
-                            doneind = wheredone[0].item() # first place it predicts to be done
-                            prompt = torch.cat([prompt, predtoks[:, :doneind+1]])
+                        return NotImplementedError
                         
                     mask = torch.ones_like(prompt)
                     
@@ -285,8 +278,8 @@ def MOEModelForCausalLM(model, **kwargs):
                     UserWarning,
                 )
                 stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-            else: 
-                max_length = stopping_criteria.max_length
+            # else: 
+            #     max_length = stopping_criteria.max_length
             logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
 
             pad_token_id = pad_token_id if pad_token_id is not None else self.PAD
@@ -336,7 +329,7 @@ def MOEModelForCausalLM(model, **kwargs):
             # print(self.PAD, self.EOC, pad_token_id, eoc_token_id)
             
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
-                print(input_ids, 'self.col.value', self.col.value)
+                print(input_ids, )
                 # prepare model inputs
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -394,8 +387,8 @@ def MOEModelForCausalLM(model, **kwargs):
                 elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
                     # print('done with line', 'input ids shape', input_ids.shape)
                     break
-                elif input_ids.shape[-1] >= max_length: # max len reached
-                    break
+                # elif input_ids.shape[-1] >= max_length: # max len reached
+                #     break
 
                 # finished sentences should have their next token be a padding token
                 # if eoc_token_id is not None:
