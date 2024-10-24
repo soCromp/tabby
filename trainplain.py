@@ -281,7 +281,8 @@ elif not args.great:
         tokenizer = AutoTokenizer.from_pretrained(modelname, padding_side='left')
     tokenizer.pad_token = tokenizer.eos_token
     # special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
-    # num_added_toks = tokenizer.add_special_tokens(special_tokens_dict)
+    # num_added_toks = tokenizer.add_special_tokens({"bos_token": "<BOS>"})
+    bos_token_id = tokenizer(';', add_special_tokens=False).input_ids[0]#len(tokenizer)-1
     
     if args.lora:
         quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
@@ -304,7 +305,7 @@ elif not args.great:
     else:
         dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map={"": PartialState().process_index},
                                                                   quantization_config=quantization_config)
-    dgpt2.resize_token_embeddings(len(tokenizer))
+    # dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     if args.moe or args.mh:
@@ -364,11 +365,11 @@ elif not args.great:
                     tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
                                                     add_special_tokens=False)
                     prompt = torch.full((1,), #batch_size x token
-                                        self.tokenizer.bos_token_id)
+                                        bos_token_id)
                     return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
                 else:
-                    text = tokenizer.bos_token + ''.join(text)
-                    # print(text)
+                    text = tokenizer.decode([bos_token_id])[0] + ''.join(text)
+                    print(text)
                     tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
                     return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                             'labels': tokenized_text.input_ids.squeeze()}
@@ -444,7 +445,7 @@ elif not args.great:
         else: 
             sbs = min(1, args.n_samples)
 
-        inputs = torch.full((sbs, 1), tokenizer.bos_token_id).to(model.device)
+        inputs = torch.full((sbs, 1), bos_token_id).to(model.device)
         samples = []
         startind = 0 # remove BOS token
         # if args.moe or args.mh:

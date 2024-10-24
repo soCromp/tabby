@@ -106,7 +106,6 @@ def MOEModelForCausalLM(model, **kwargs):
             
             prompt = deepcopy(input_ids) #bs x tokens
             mask = torch.ones_like(prompt)
-            # print(prompt)
             
             transformer_outputs = transformer(prompt, attention_mask=mask, **kwargs)
             hidden_states = transformer_outputs[0]
@@ -278,8 +277,6 @@ def MOEModelForCausalLM(model, **kwargs):
                     UserWarning,
                 )
                 stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-            # else: 
-            #     max_length = stopping_criteria.max_length
             logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
 
             pad_token_id = pad_token_id if pad_token_id is not None else self.PAD
@@ -371,7 +368,6 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
-
                 # print(input_ids[..., -1].item())
                 if input_ids[..., -1].item() == self.EOC and expert < self.num_experts-1:
                     expert += 1
@@ -387,8 +383,6 @@ def MOEModelForCausalLM(model, **kwargs):
                 elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
                     # print('done with line', 'input ids shape', input_ids.shape)
                     break
-                # elif input_ids.shape[-1] >= max_length: # max len reached
-                #     break
 
                 # finished sentences should have their next token be a padding token
                 # if eoc_token_id is not None:
