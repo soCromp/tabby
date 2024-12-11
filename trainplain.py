@@ -226,7 +226,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split(';') # remove newline at end
+        entries = l[:-1].split(';')[1:] # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -235,8 +235,11 @@ def parse(raws, args, file_path, outpath):
             if c[0] in cols and len(c) == 3 and c[0] not in d: # keep only first occurence
                 d[c[0]] = c[2]
         # d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
+        # print(d)
+        # print(set(d.keys()), cols)
 
         if set(d.keys()) == cols:
+            print('success')
             return d 
         else:
             return None
@@ -305,6 +308,7 @@ elif not args.great:
     else:
         dgpt2 = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map={"": PartialState().process_index},
                                                                   quantization_config=quantization_config)
+    print(dgpt2, type(dgpt2))
     # dgpt2.resize_token_embeddings(len(tokenizer))
     # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
@@ -362,6 +366,7 @@ elif not args.great:
                 else:
                     text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
                 if self.do_moe_format:
+                    # print(text)
                     tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
                                                     add_special_tokens=False)
                     prompt = torch.full((1,), #batch_size x token
@@ -369,7 +374,7 @@ elif not args.great:
                     return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
                 else:
                     text = tokenizer.decode([bos_token_id])[0] + ''.join(text)
-                    print(text)
+                    # print(text)
                     tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
                     return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                             'labels': tokenized_text.input_ids.squeeze()}
@@ -443,9 +448,12 @@ elif not args.great:
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
             sbs = 1
         else: 
-            sbs = min(1, args.n_samples)
+            sbs = 1#min(1, args.n_samples)
 
         inputs = torch.full((sbs, 1), bos_token_id).to(model.device)
+        if args.llama1:
+            inputs = tokenizer(';', return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
+
         samples = []
         startind = 0 # remove BOS token
         # if args.moe or args.mh:

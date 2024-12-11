@@ -61,6 +61,7 @@ def MOEModelForCausalLM(model, **kwargs):
             # https://stackoverflow.com/questions/597199/converting-an-object-into-a-subclass-in-python
             # moemodel = deepcopy(model)
             moemodel = model
+            basemodeltype = type(model)
             moemodel.__class__ = MOEModelForCausalLM
             moemodel.col = Integer()
             moemodel.num_experts = num_experts
@@ -68,11 +69,12 @@ def MOEModelForCausalLM(model, **kwargs):
             moemodel.EOC = eoc
             
             if moe:
-                if type(model) == GPT2LMHeadModel:
+                print(basemodeltype)
+                if basemodeltype == GPT2LMHeadModel:
                     for i in range(len(moemodel.transformer.h)):
                         moemodel.transformer.h[i].mlp = MultiLayer.from_other(
                             moemodel.transformer.h[i].mlp, moemodel.col, moemodel.num_experts)
-                elif type(model) == LlamaForCausalLM:
+                elif basemodeltype == LlamaForCausalLM:
                     # moemodel = deepcopy(model)
                     print('deep copied model')
                     moemodel.__class__ = MOEModelForCausalLM
@@ -267,7 +269,7 @@ def MOEModelForCausalLM(model, **kwargs):
                 token_heads = self.token_heads
                 
             self.col.value = token_heads[expert]
-            # print(self.col.value)
+            print(self.col.value)
             logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
             stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
             if max_length is not None:
@@ -369,9 +371,9 @@ def MOEModelForCausalLM(model, **kwargs):
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
                 # print(input_ids[..., -1].item())
-                if input_ids[..., -1].item() == self.EOC and expert < self.num_experts-1:
+                if input_ids[..., -1].item() == self.EOC and expert < self.num_experts:
                     expert += 1
-                    self.col.value = token_heads[expert]
+                    self.col.value = token_heads[expert-1]
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) > 0: # more tokens to keep inserting
                         insert_column_name = True 
@@ -380,7 +382,7 @@ def MOEModelForCausalLM(model, **kwargs):
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) == 0: # inserted this whole column name
                         insert_column_name = False
-                elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
+                elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts: # this line is done
                     # print('done with line', 'input ids shape', input_ids.shape)
                     break
 
