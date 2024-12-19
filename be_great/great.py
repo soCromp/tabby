@@ -137,9 +137,7 @@ class GReaT:
             lora_config = LoraConfig(
                 r=1,  
                 lora_alpha=256,
-                target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
-                                #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
-                                ],
+                target_modules='all-linear',
                 lora_dropout=0.05,
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
@@ -193,14 +191,15 @@ class GReaT:
         self._update_column_information(df)
         self._update_conditional_information(df, conditional_col)
         
-        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
-        num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
-        self.model.resize_token_embeddings(len(self.tokenizer))
+        # special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
+        # num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+        # self.model.resize_token_embeddings(len(self.tokenizer))
+        eoc_token_id = self.tokenizer(';', add_special_tokens=False).input_ids[0]
             
         if self.moe or self.multihead:
             self.model = MOEModelForCausalLM(self.model, num_experts=df.shape[1], 
                                              moe=self.moe, multihead=self.multihead, 
-                                             pad=self.tokenizer.pad_token_id, eoc=len(self.tokenizer)-1)
+                                             pad=self.tokenizer.pad_token_id, eoc=eoc_token_id)
             self.model.set_train_mode()
             print(df.shape[1], 'experts model')
             print(self.model)
@@ -308,11 +307,12 @@ class GReaT:
                 max_length=max_length,
                 do_sample=True,
                 temperature=temperature,
-                pad_token_id=128255,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
 
             # Convert tokens back to tabular data
             text_data = _convert_tokens_to_text(tokens.cpu(), self.tokenizer)
+            print(len(text_data))
             
             gen.extend(text_data)
             # print(len(gen))
@@ -375,6 +375,7 @@ class GReaT:
 
         # Convert Text back to Tabular Data
         decoded_data = _convert_tokens_to_text(generated_data, self.tokenizer)
+        print(decoded_data)
         df_gen = _convert_text_to_tabular_data(decoded_data, self.columns)
 
         return df_gen
@@ -483,8 +484,8 @@ class GReaT:
 
             json.dump(attributes, f)
             
-        #if self.efficient_finetuning == "lora":
-        #    self.model = self.model.merge_and_unload()
+        if self.efficient_finetuning == "lora":
+           self.model = self.model.merge_and_unload()
             
         print(self.model)
 
@@ -499,9 +500,10 @@ class GReaT:
         Args:
             path: Path to the fine-tuned model
         """
-        special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
-        num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
-        self.model.resize_token_embeddings(len(self.tokenizer))
+        # special_tokens_dict = {"bos_token": "<BOS>", 'eos_token': '<EOC>'}
+        # num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
+        # self.model.resize_token_embeddings(len(self.tokenizer))
+        eoc_token_id = self.tokenizer(';', add_special_tokens=False).input_ids[0]
         
         if self.moe or self.multihead:
             sd = torch.load(path)
@@ -512,7 +514,7 @@ class GReaT:
             print(num_experts, 'experts model')
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts, 
                                              moe=self.moe, multihead=self.multihead, 
-                                             pad=self.tokenizer.pad_token_id, eoc=len(self.tokenizer)-1)
+                                             pad=self.tokenizer.pad_token_id, eoc=eoc_token_id)
             self.model.load_state_dict(sd)
         else:
             self.model.load_state_dict(torch.load(path))

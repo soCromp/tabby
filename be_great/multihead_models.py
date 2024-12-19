@@ -328,7 +328,7 @@ def MOEModelForCausalLM(model, **kwargs):
             # print(self.PAD, self.EOC, pad_token_id, eoc_token_id)
             
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
-                print(input_ids, )
+                print(input_ids, self.col.value)
                 # prepare model inputs
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 

@@ -293,8 +293,7 @@ elif not args.great:
         lora_config = LoraConfig(
             r=1,  
             lora_alpha=256,
-            target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
-                            ],
+            target_modules='all-linear',
             lora_dropout=0.05,
             bias="none",
             task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
@@ -537,7 +536,7 @@ else: #use great
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses_val.csv'))
         
     if args.n_samples > 0:
-        sbs = 100 #sample batch size
+        sbs = min(100, args.n_samples) #sample batch size
         max_length = dataconfig['max_col_length']*len(dataconfig['cols'])
         if args.moe or args.mh:
             sbs = 1
