@@ -25,6 +25,7 @@ from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
 from accelerate import PartialState
+os.environ["WANDB_DISABLED"] = 'true'
 
     
 parser = argparse.ArgumentParser(

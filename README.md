@@ -14,6 +14,7 @@ pip install transformers==4.44.2 accelerate datasets ucimlrepo openml bitsandbyt
 
 *Fixing llama bugs*<br>
 ```python
-pip install --upgrade transformers
-conda install accelerate==0.34.2
+pip install --upgrade transformers==4.44.2
+pip install --upgrade accelerate==0.34.2
+pip install peft
 ```

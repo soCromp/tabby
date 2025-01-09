@@ -127,17 +127,23 @@ class GReaT:
                     get_peft_model,
                     prepare_model_for_kbit_training,
                     TaskType,
+                    PeftModel
                 )
             except ImportError:
                 raise ImportError(
                     "This function requires the 'peft' package. Please install it with - pip install peft"
                 )
+                
+            linear_layers = []
+            for name, module in self.model.named_modules():
+                if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                    linear_layers.append(name)
 
             # Define LoRA Config
             lora_config = LoraConfig(
                 r=1,  
                 lora_alpha=256,
-                target_modules='all-linear',
+                target_modules=linear_layers,
                 lora_dropout=0.05,
                 bias="none",
                 task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
@@ -312,7 +318,7 @@ class GReaT:
 
             # Convert tokens back to tabular data
             text_data = _convert_tokens_to_text(tokens.cpu(), self.tokenizer)
-            print(len(text_data))
+            # print(len(text_data))
             
             gen.extend(text_data)
             # print(len(gen))
@@ -504,9 +510,10 @@ class GReaT:
         # num_added_toks = self.tokenizer.add_special_tokens(special_tokens_dict)
         # self.model.resize_token_embeddings(len(self.tokenizer))
         eoc_token_id = self.tokenizer(';', add_special_tokens=False).input_ids[0]
+        print('in load_finetuned_model')
         
         if self.moe or self.multihead:
-            sd = torch.load(path)
+            sd = torch.load(os.path.join(path, 'model.pt'))
             if self.moe:
                 num_experts = len(set([int(k.split('.')[-3]) for k in sd.keys() if 'mlp.layers' in k]))
             elif self.multihead:
@@ -515,9 +522,18 @@ class GReaT:
             self.model = MOEModelForCausalLM(self.model, num_experts=num_experts, 
                                              moe=self.moe, multihead=self.multihead, 
                                              pad=self.tokenizer.pad_token_id, eoc=eoc_token_id)
-            self.model.load_state_dict(sd)
-        else:
-            self.model.load_state_dict(torch.load(path))
+            
+        # if self.efficient_finetuning_func:
+        #     self.efficient_finetuning_func()
+        print(self.model)
+        from peft import PeftModel
+        checkpoints = [
+            d for d in os.listdir(path)
+            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(path, d))
+        ]
+        most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
+        self.model = PeftModel.from_pretrained(self.model, os.path.join(path, most_recent))
+        # self.model.load_state_dict(torch.load(path))
 
     @classmethod
     def load_from_dir(cls, path: str, model=None):
@@ -542,11 +558,13 @@ class GReaT:
         # great.model.load_state_dict(torch.load(path + "/model.pt", map_location="cpu"))
         if model is None:
             # Create new be_great model instance
-            great = cls(attributes["llm"], create_model=True)
-            great.load_finetuned_model(os.path.join(path, 'model.pt'))
+            great = cls(attributes["llm"], efficient_finetuning=attributes['efficient_finetuning'], create_model=True, 
+                        moe=attributes['moe'], multihead=attributes['multihead'])
+            great.load_finetuned_model(path)
         else:
             # Create new be_great model instance
-            great = cls(attributes["llm"], create_model=False)
+            great = cls(attributes["llm"], efficient_finetuning=attributes['efficient_finetuning'], create_model=False, 
+                        moe=attributes['moe'], multihead=attributes['multihead'])
             great.model = model
             
         # Set all attributes

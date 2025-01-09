@@ -104,7 +104,7 @@ def MOEModelForCausalLM(model, **kwargs):
         
         #generation forward
         def autocol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
-            print(kwargs.keys())
+            # print(kwargs.keys())
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
@@ -272,7 +272,7 @@ def MOEModelForCausalLM(model, **kwargs):
                 token_heads = self.token_heads
                 
             self.col.value = token_heads[expert]
-            print(self.col.value)
+            # print(self.col.value)
             logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
             stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
             if max_length is not None:
@@ -331,7 +331,7 @@ def MOEModelForCausalLM(model, **kwargs):
             # print(self.PAD, self.EOC, pad_token_id, eoc_token_id)
             
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
-                print(input_ids, self.col.value)
+                # print(input_ids, self.col.value)
                 # prepare model inputs
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
