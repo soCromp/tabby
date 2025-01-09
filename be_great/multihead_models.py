@@ -104,6 +104,7 @@ def MOEModelForCausalLM(model, **kwargs):
         
         #generation forward
         def autocol_forward(self, input_ids = None, attention_mask = None, labels = None, **kwargs):
+            print(kwargs.keys())
             transformer, lm_head = self.children()
             
             prompt = deepcopy(input_ids) #bs x tokens
@@ -126,6 +127,8 @@ def MOEModelForCausalLM(model, **kwargs):
         #training forward
         def multicol_forward(self, input_ids = None, attention_mask = None, labels = None, cols_iterator=None, **kwargs):
             # input_ids, attention_mask, labels: batch x column x tokens
+            if 'num_items_in_batch' in kwargs: # fixes library compatibility issues, ASSUMING we always have batch size 1
+                num_items_in_batch=kwargs.pop('num_items_in_batch')
 
             transformer, lm_head = self.children()
             

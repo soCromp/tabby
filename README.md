@@ -11,4 +11,9 @@ conda activate env
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 conda install tqdm matplotlib jupyter pandas scikit-learn jupyter
 pip install transformers==4.44.2 accelerate datasets ucimlrepo openml bitsandbytes wandb openpyxl
+
+*Fixing llama bugs*<br>
+```python
+pip install --upgrade transformers
+conda install accelerate==0.34.2
 ```

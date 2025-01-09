@@ -55,8 +55,8 @@ parser.add_argument('-l1', '--llama1', action='store_true',
                     default=False, help='use llama3.2 1B')
 parser.add_argument('-gpt2', '--gpt2', action='store_true',
                     default=False, help='use non-distilled GPT2')
-parser.add_argument('-lora', '--lora', action='store_true',
-                    default=False, help='use LORA')
+parser.add_argument('-eff', '--efficient', action='store_true',
+                    default=False, help='use LORA and reduced precision')
 parser.add_argument('-lr', '--lr', type=float,
                     default=1e-6, help='training learning rate')
 parser.add_argument('-n', '--n-samples', type=int,
@@ -287,17 +287,9 @@ elif not args.great:
     # num_added_toks = tokenizer.add_special_tokens({"bos_token": "<BOS>"})
     bos_token_id = tokenizer(';', add_special_tokens=False).input_ids[0]#len(tokenizer)-1
     
-    if args.lora:
+    if args.efficient:
         quantization_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", 
             bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)
-        lora_config = LoraConfig(
-            r=1,  
-            lora_alpha=256,
-            target_modules='all-linear',
-            lora_dropout=0.05,
-            bias="none",
-            task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
-        )
     else:
         quantization_config = None
 
@@ -321,7 +313,21 @@ elif not args.great:
     else:
         model = dgpt2
         
-    if args.lora:
+    if args.efficient:
+        linear_layers = []
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                linear_layers.append(name)
+        
+        lora_config = LoraConfig(
+            r=1,  
+            lora_alpha=256,
+            target_modules=linear_layers,
+            lora_dropout=0.05,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+        )
+        
         model = prepare_model_for_kbit_training(model)
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
@@ -408,7 +414,7 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.lora, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
@@ -437,7 +443,7 @@ elif not args.great:
         from transformers.utils import logging
         logging.set_verbosity_error()
         
-        if args.lora:
+        if args.efficient:
             model = model.merge_and_unload()
         model.eval()
         column_names_tokens = tokenizer(list(data.columns), add_special_tokens=False).input_ids
@@ -489,7 +495,7 @@ else: #use great
             json.dump(config, f)
             
         ef = False
-        if args.lora:
+        if args.efficient:
             ef = 'lora'
         
         model = GReaT(llm=modelname, batch_size=1, per_device_eval_batch_size=1,
