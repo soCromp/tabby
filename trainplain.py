@@ -315,6 +315,10 @@ elif not args.great:
         model = dgpt2
         
     if args.efficient:
+        for param in model.parameters():
+            param.requires_grad = False
+        for param in model.lm_head.parameters(): # so the LM head is still fully finetuned
+            param.requires_grad = True
         linear_layers = []
         for name, module in model.named_modules():
             if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
