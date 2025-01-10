@@ -134,21 +134,28 @@ class GReaT:
                     "This function requires the 'peft' package. Please install it with - pip install peft"
                 )
                 
-            linear_layers = []
-            for name, module in self.model.named_modules():
-                if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
-                    linear_layers.append(name)
-
-            # Define LoRA Config
-            lora_config = LoraConfig(
-                r=1,  
-                lora_alpha=256,
-                target_modules=linear_layers,
-                lora_dropout=0.05,
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
-            )
+            
             def apply_efficient_finetuning():
+                for param in self.model.parameters():
+                    param.requires_grad = False
+                for param in self.model.lm_head.parameters(): # so the LM head is still fully finetuned
+                    param.requires_grad = True
+                    
+                linear_layers = []
+                for name, module in self.model.named_modules():
+                    if isinstance(module, torch.nn.Linear) and 'lm_head' not in name:
+                        linear_layers.append(name)
+
+                # Define LoRA Config
+                lora_config = LoraConfig(
+                    r=1,  
+                    lora_alpha=256,
+                    target_modules=linear_layers,
+                    lora_dropout=0.05,
+                    bias="none",
+                    task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
+                )
+                
                 # prepare int-8 model for training
                 self.model = prepare_model_for_kbit_training(self.model)
                 # add LoRA adaptor
@@ -283,7 +290,7 @@ class GReaT:
         Returns:
             pd.DataFrame: DataFrame containing n_samples rows of generated data.
         """
-            
+        self.model.eval()
         great_start = self._get_start_sampler(start_col, start_col_dist)
         if self.moe or self.multihead:
             conditional_ind = self.columns.index(self.conditional_col)
@@ -293,36 +300,33 @@ class GReaT:
             column_names_tokens = self.tokenizer(self.columns, add_special_tokens=False).input_ids
             self.model.set_generation_mode(None, column_names_tokens) # generate columns in random order
             # self.model.set_generation_mode(expert_indices, column_names_tokens) # generate columns in fixed order
-            # print(self.columns)
-
-        # Move model to device
-        # self.model.to(device)
 
         # Init list for generated DataFrames
         gen = []
 
         # Start generation process
-        for i in tqdm(range(0,n_samples,k)):
-                    
-            start_tokens = great_start.get_start_tokens(k)
-            start_tokens = torch.tensor(start_tokens).to(device)
+        with torch.inference_mode():
+            for i in tqdm(range(0,n_samples,k)):
+                        
+                start_tokens = great_start.get_start_tokens(k)
+                start_tokens = torch.tensor(start_tokens).to(device)
 
-            # Generate tokens
-            tokens = self.model.generate(
-                input_ids=start_tokens,
-                max_length=max_length,
-                do_sample=True,
-                temperature=temperature,
-                pad_token_id=self.tokenizer.pad_token_id,
-            )
+                # Generate tokens
+                tokens = self.model.generate(
+                    input_ids=start_tokens,
+                    max_length=max_length,
+                    do_sample=True,
+                    temperature=temperature,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                )
 
-            # Convert tokens back to tabular data
-            text_data = _convert_tokens_to_text(tokens.cpu(), self.tokenizer)
-            # print(len(text_data))
-            
-            gen.extend(text_data)
-            # print(len(gen))
-            already_generated = len(gen)
+                # Convert tokens back to tabular data
+                text_data = _convert_tokens_to_text(tokens.cpu(), self.tokenizer)
+                # print(len(text_data))
+                
+                gen.extend(text_data)
+                # print(len(gen))
+                already_generated = len(gen)
             
         self.model.cpu() 
         # print(gen)
@@ -353,7 +357,9 @@ class GReaT:
         """
         # ToDo: Add n_samples argument to generate more samples for one conditional input.
 
+        self.model.eval()
         self.model.to(device)
+        print(self.model)
         starting_prompts = (
             [starting_prompts]
             if isinstance(starting_prompts, str)
@@ -366,18 +372,19 @@ class GReaT:
             loop_iter = tqdm(starting_prompts)
         else:
             loop_iter = starting_prompts
-        for prompt in loop_iter:
-            start_token = torch.tensor(self.tokenizer(prompt)["input_ids"]).to(device)
+        with torch.inference_mode():
+            for prompt in loop_iter:
+                start_token = torch.tensor(self.tokenizer(prompt)["input_ids"]).to(device)
 
-            # Generate tokens
-            gen = self.model.generate(
-                input_ids=torch.unsqueeze(start_token, 0),
-                max_length=max_length,
-                do_sample=True,
-                temperature=temperature,
-                # pad_token_id=50256,
-            )
-            generated_data.append(torch.squeeze(gen).cpu())
+                # Generate tokens
+                gen = self.model.generate(
+                    input_ids=torch.unsqueeze(start_token, 0),
+                    max_length=max_length,
+                    do_sample=True,
+                    temperature=temperature,
+                    # pad_token_id=50256,
+                )
+                generated_data.append(torch.squeeze(gen).cpu())
 
         # Convert Text back to Tabular Data
         decoded_data = _convert_tokens_to_text(generated_data, self.tokenizer)
@@ -525,7 +532,7 @@ class GReaT:
             
         # if self.efficient_finetuning_func:
         #     self.efficient_finetuning_func()
-        print(self.model)
+        # print(self.model)
         from peft import PeftModel
         checkpoints = [
             d for d in os.listdir(path)
