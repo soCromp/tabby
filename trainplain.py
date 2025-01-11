@@ -143,12 +143,12 @@ if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama8:
     if args.local:
-        modelname = 'Meta-Llama-3-8B'
+        modelname = '/staging/cromp/weights/meta-llama/Meta-Llama-3-8B'
     else:
         modelname = 'meta-llama/Meta-Llama-3-8B'
 elif args.llama1:
     if args.local:
-        modelname = 'Llama-3.2-1B'
+        modelname = '/staging/cromp/weights/meta-llama/Llama-3.2-1B'
     else:
         modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
