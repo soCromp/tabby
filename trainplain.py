@@ -70,6 +70,8 @@ parser.add_argument('-resume', '--resume', action='store_true', default=False,
                     help='resume training run')
 parser.add_argument('-e', '--epochs', type=int,
                     default=50, help='number of epochs to train')
+parser.add_argument('-local', '--local', action='store_true', default=False,
+                    help='whether to use local copies of model weights. For CHTC runs.')
 args = parser.parse_args()
 print(args)
 
@@ -140,9 +142,15 @@ else:
 if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama8:
-    modelname = 'meta-llama/Meta-Llama-3-8B'
+    if args.local:
+        modelname = 'Meta-Llama-3-8B'
+    else:
+        modelname = 'meta-llama/Meta-Llama-3-8B'
 elif args.llama1:
-    modelname = 'meta-llama/Llama-3.2-1B'
+    if args.local:
+        modelname = 'Llama-3.2-1B'
+    else:
+        modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
     modelname = 'gpt2'
 else:
