@@ -70,7 +70,7 @@ class CategoricalStart(GReaTStart):
 
     """
 
-    def __init__(self, tokenizer, start_col: str, start_col_dist: dict):
+    def __init__(self, tokenizer, start_col: str, start_col_dist: dict, add_special_tokens=False):
         """Initializes the Categorical Start
 
         Args:
@@ -86,11 +86,12 @@ class CategoricalStart(GReaTStart):
         self.start_col = start_col
         self.population = list(start_col_dist.keys())
         self.weights = list(start_col_dist.values())
+        self.add_special_tokens = add_special_tokens
 
     def get_start_tokens(self, n_samples):
         start_words = random.choices(self.population, self.weights, k=n_samples)
         start_text = [self.start_col + " is " + str(s).strip() for s in start_words]
-        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=False)["input_ids"])
+        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=self.add_special_tokens)["input_ids"])
         return start_tokens
 
 
@@ -113,6 +114,7 @@ class ContinuousStart(GReaTStart):
         start_col_dist: tp.List[float],
         noise: float = 0.01,
         decimal_places: int = 5,
+        add_special_tokens=False
     ):
         """Initializes the Continuous Start
 
@@ -132,6 +134,7 @@ class ContinuousStart(GReaTStart):
         self.start_col_dist = start_col_dist
         self.noise = noise
         self.decimal_places = decimal_places
+        self.add_special_tokens = add_special_tokens
 
     def get_start_tokens(self, n_samples):
         start_words = random.choices(self.start_col_dist, k=n_samples)
@@ -140,7 +143,7 @@ class ContinuousStart(GReaTStart):
             self.start_col + " is " + format(s, f".{self.decimal_places}f")
             for s in start_words
         ]
-        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=False)["input_ids"])
+        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=self.add_special_tokens)["input_ids"])
         return start_tokens
 
 
@@ -153,7 +156,7 @@ class RandomStart(GReaTStart):
         all_columns (List[str]): Names of all columns
     """
 
-    def __init__(self, tokenizer, all_columns: tp.List[str]):
+    def __init__(self, tokenizer, all_columns: tp.List[str], add_special_tokens=False):
         """Initializes the Random Start
 
         Args:
@@ -162,9 +165,10 @@ class RandomStart(GReaTStart):
         """
         super().__init__(tokenizer)
         self.all_columns = all_columns
+        self.add_special_tokens = add_special_tokens
 
     def get_start_tokens(self, n_samples):
         start_words = random.choices(self.all_columns, k=n_samples)
         start_text = [s + " is " for s in start_words]
-        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=False)["input_ids"])
+        start_tokens = _pad_tokens(self.tokenizer(start_text, add_special_tokens=self.add_special_tokens)["input_ids"])
         return start_tokens

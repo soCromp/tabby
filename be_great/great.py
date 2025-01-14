@@ -291,7 +291,8 @@ class GReaT:
             pd.DataFrame: DataFrame containing n_samples rows of generated data.
         """
         self.model.eval()
-        great_start = self._get_start_sampler(start_col, start_col_dist)
+        add_special_tokens= 'llama' in self.llm.lower()
+        great_start = self._get_start_sampler(start_col, start_col_dist, add_special_tokens=add_special_tokens)
         if self.moe or self.multihead:
             conditional_ind = self.columns.index(self.conditional_col)
             expert_indices = [conditional_ind] + list(range(conditional_ind)) +\
@@ -603,6 +604,7 @@ class GReaT:
         self,
         start_col: tp.Optional[str],
         start_col_dist: tp.Optional[tp.Union[tp.Dict, tp.List]],
+        add_special_tokens=False
     ) -> GReaTStart:
         if start_col and start_col_dist is None:
             raise ValueError(
@@ -626,8 +628,8 @@ class GReaT:
         start_col_dist = start_col_dist if start_col_dist else self.conditional_col_dist
 
         if isinstance(start_col_dist, dict):
-            return CategoricalStart(self.tokenizer, start_col, start_col_dist)
+            return CategoricalStart(self.tokenizer, start_col, start_col_dist, add_special_tokens=add_special_tokens)
         elif isinstance(start_col_dist, list):
-            return ContinuousStart(self.tokenizer, start_col, start_col_dist)
+            return ContinuousStart(self.tokenizer, start_col, start_col_dist, add_special_tokens=add_special_tokens)
         else:
-            return RandomStart(self.tokenizer, self.columns)
+            return RandomStart(self.tokenizer, self.columns, add_special_tokens=add_special_tokens)
