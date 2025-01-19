@@ -498,13 +498,9 @@ class GReaT:
 
             json.dump(attributes, f)
             
-        if self.efficient_finetuning == "lora":
-           self.model = self.model.merge_and_unload()
+        torch.save(self.model.state_dict(), path + "/model.pt")
             
         print(self.model)
-
-        # Save model weights
-        torch.save(self.model.state_dict(), path + "/model.pt")
 
     def load_finetuned_model(self, path: str):
         """Load fine-tuned model
@@ -539,6 +535,10 @@ class GReaT:
         # ]
         # most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
         # self.model = PeftModel.from_pretrained(self.model, os.path.join(path, most_recent))
+        
+        if self.efficient_finetuning_func is not None:
+            print('applying efficient finetuning')
+            self.efficient_finetuning_func()
         
         problems = []
         for name, param in self.model.state_dict().items():

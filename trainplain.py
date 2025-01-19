@@ -427,7 +427,7 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 3, metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+                                  save_total_limit = 1, metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
@@ -456,8 +456,8 @@ elif not args.great:
         from transformers.utils import logging
         logging.set_verbosity_error()
         
-        if args.efficient:
-            model = model.merge_and_unload()
+        # if args.efficient:
+        #     model = model.merge_and_unload()
         model.eval()
         column_names_tokens = tokenizer(list(data.columns), add_special_tokens=False).input_ids
         print(list(data.columns), column_names_tokens)
@@ -469,7 +469,7 @@ elif not args.great:
             sbs = 1#min(1, args.n_samples)
 
         inputs = torch.full((sbs, 1), bos_token_id).to(model.device)
-        if args.llama1:
+        if args.llama1 or args.llama8:
             inputs = tokenizer(';', return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
 
         samples = []
