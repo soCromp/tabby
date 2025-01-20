@@ -33,7 +33,7 @@ from be_great.great_utils import (
 )
 
 from be_great.multihead_models import MOEModelForCausalLM
-
+from peft import PeftModel
 
 class GReaT:
     """GReaT Class
@@ -528,27 +528,31 @@ class GReaT:
                                              moe=self.moe, multihead=self.multihead, 
                                              pad=self.tokenizer.pad_token_id, eoc=eoc_token_id)
             
-        # from peft import PeftModel
-        # checkpoints = [
-        #     d for d in os.listdir(path)
-        #     if d.startswith("checkpoint-") and os.path.isdir(os.path.join(path, d))
-        # ]
-        # most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
-        # self.model = PeftModel.from_pretrained(self.model, os.path.join(path, most_recent))
         
-        if self.efficient_finetuning_func is not None:
-            print('applying efficient finetuning')
-            self.efficient_finetuning_func()
-        
-        problems = []
-        for name, param in self.model.state_dict().items():
-            try:
-                param.data.copy_(sd[name])
-            except:
-                problems.append(name)
-                smaller = min(param.data.shape[0], sd[name].shape[0])
-                param.data[:smaller].copy_(sd[name][:smaller])
-        print('size mismatches in', problems)
+        checkpoints = [
+            d for d in os.listdir(path)
+            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(path, d))
+        ]
+        if len(checkpoints) > 0:
+            # so use checkpoint directory
+            most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
+            print('loading from checkpoint directory', most_recent)
+            self.model = PeftModel.from_pretrained(self.model, os.path.join(path, most_recent))
+        else:
+            print('no checkpoint directories available; using model.pt instead')
+            if self.efficient_finetuning_func is not None:
+                print('applying efficient finetuning')
+                self.efficient_finetuning_func()
+            
+            problems = []
+            for name, param in self.model.state_dict().items():
+                try:
+                    param.data.copy_(sd[name])
+                except:
+                    problems.append(name)
+                    smaller = min(param.data.shape[0], sd[name].shape[0])
+                    param.data[:smaller].copy_(sd[name][:smaller])
+            print('size mismatches in', problems)
         
 
     @classmethod

@@ -23,7 +23,7 @@ from be_great.great_trainer import GReaTTrainer
 import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, TaskType, PeftModel
 from accelerate import PartialState
 os.environ["WANDB_DISABLED"] = 'true'
 
@@ -235,7 +235,7 @@ def parse(raws, args, file_path, outpath):
     cols  = set(real.columns)
     
     def parse_line(l):
-        entries = l[:-1].split(';')[1:] # remove newline at end
+        entries = l.split(';') # remove newline at end
         # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
         # print(words)
@@ -248,11 +248,25 @@ def parse(raws, args, file_path, outpath):
         # print(set(d.keys()), cols)
 
         if set(d.keys()) == cols:
-            print('success')
+            # print('success')
             return d 
         else:
             return None
 
+    if raws[0].startswith('<|begin_of_text|>;'): # i.e. llama plain
+        cliplen = len('<|begin_of_text|>;')
+        raws = [raw[cliplen:] for raw in raws]
+    elif raws[0].startswith('<|begin_of_text|>'): # i.e. llama great
+        cliplen = len('<|begin_of_text|>')
+        raws = [raw[cliplen:] for raw in raws]
+    elif raws[0].startswith('<|begin_of_text|>;'): # i.e. non-llama plain
+        cliplen = 1
+        raws = [raw[cliplen:] for raw in raws]
+    # print(raws[0])
+    
+    if raws[0].endswith('\n'):
+        raws = [raw[:-1] for raw in raws]
+        
     line_dicts = [parse_line(l) for l in raws]
     line_dicts = [l for l in line_dicts if l is not None]
     print(len(raws)-len(line_dicts), 'problem lines')
@@ -341,11 +355,13 @@ elif not args.great:
             task_type=TaskType.CAUSAL_LM,  # this is specific for gpt2 model, to be adapted
         )
         
-        model = prepare_model_for_kbit_training(model)
-        model = get_peft_model(model, lora_config)
-        model.print_trainable_parameters()
-        print('applying lora, model type now', type(model))
-        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
+        def efficient_finetuning_func(model):
+            model = prepare_model_for_kbit_training(model)
+            model = get_peft_model(model, lora_config)
+            model.print_trainable_parameters()
+            print('applying lora, model type now', type(model))
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False})
+            return model 
         
     print(model)
     
@@ -359,6 +375,10 @@ elif not args.great:
         }
         with open(os.path.join(outpath, 'config.json'), 'w') as f:
             json.dump(config, f)
+            
+        if args.efficient():
+            model = efficient_finetuning_func(model)
+            print(model)
         
         model.train()
 
@@ -443,11 +463,23 @@ elif not args.great:
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
     if not args.train and not args.valtrain: # load in checkpoint so we can validate or sample
-        ckpt_path = os.path.join(outpath, 'model.pt')
-        print('loading from', ckpt_path)
-        sd = torch.load(ckpt_path)
-        for name, param in model.named_parameters():
-            param.data.copy_(sd[name])
+        checkpoints = [
+            d for d in os.listdir(outpath)
+            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
+        ]
+        if len(checkpoints) > 0:
+            most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
+            print('loading from checkpoint directory', most_recent)
+            model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
+        else:
+            ckpt_path = os.path.join(outpath, 'model.pt')
+            print('loading from', ckpt_path)
+            if args.efficient:
+                model = efficient_finetuning_func(model)
+                print(model)
+            sd = torch.load(ckpt_path)
+            for name, param in model.named_parameters():
+                param.data.copy_(sd[name])
         
     if args.validation:
         raise NotImplementedError()
@@ -466,11 +498,11 @@ elif not args.great:
             model.set_generation_mode(token_heads=token_heads, column_names_tokens=column_names_tokens)
             sbs = 1
         else: 
-            sbs = 1#min(1, args.n_samples)
+            sbs = min(10, args.n_samples)
 
         inputs = torch.full((sbs, 1), bos_token_id).to(model.device)
         if args.llama1 or args.llama8:
-            inputs = tokenizer(';', return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
+            inputs = tokenizer(sbs*[';'], return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
 
         samples = []
         startind = 0 # remove BOS token
