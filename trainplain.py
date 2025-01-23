@@ -364,6 +364,41 @@ elif not args.great:
             return model 
         
     print(model)
+    do_moe_format = args.moe or args.mh
+    # Data stuff
+    # Preprocess the data: Convert each row to a string
+    def row_to_col_sentences(row):
+        return [str(col).strip() + " is " + str(val).strip() + ';' for col, val in zip(row.index, row.values)]
+
+    class TextDataset(Dataset):
+        def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
+            self.texts = texts
+            self.tokenizer = tokenizer
+            self.cols = cols # "None" for all cols, else a list of desired cols' names
+            self.max_col_length = max_col_length
+            self.do_moe_format = do_moe_format
+
+        def __len__(self):
+            return len(self.texts)
+
+        def __getitem__(self, idx):
+            if self.cols is None:
+                text = row_to_col_sentences(data.iloc[idx])
+            else:
+                text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
+            if self.do_moe_format:
+                # print(text)
+                tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
+                                                add_special_tokens=False)
+                prompt = torch.full((1,), #batch_size x token
+                                    bos_token_id)
+                return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
+            else:
+                text = tokenizer.decode([bos_token_id])[0] + ''.join(text)
+                # print(text)
+                tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
+                return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
+                        'labels': tokenized_text.input_ids.squeeze()}
     
     if args.train or args.valtrain:
         config = {
@@ -376,46 +411,13 @@ elif not args.great:
         with open(os.path.join(outpath, 'config.json'), 'w') as f:
             json.dump(config, f)
             
-        if args.efficient():
+        if args.efficient:
             model = efficient_finetuning_func(model)
             print(model)
         
         model.train()
 
-        # Data stuff
-        # Preprocess the data: Convert each row to a string
-        def row_to_col_sentences(row):
-            return [str(col).strip() + " is " + str(val).strip() + ';' for col, val in zip(row.index, row.values)]
-
-        class TextDataset(Dataset):
-            def __init__(self, texts, tokenizer, cols=None, max_col_length=10, do_moe_format=True):
-                self.texts = texts
-                self.tokenizer = tokenizer
-                self.cols = cols # "None" for all cols, else a list of desired cols' names
-                self.max_col_length = max_col_length
-                self.do_moe_format = do_moe_format
-
-            def __len__(self):
-                return len(self.texts)
-
-            def __getitem__(self, idx):
-                if self.cols is None:
-                    text = row_to_col_sentences(data.iloc[idx])
-                else:
-                    text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
-                if self.do_moe_format:
-                    # print(text)
-                    tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
-                                                    add_special_tokens=False)
-                    prompt = torch.full((1,), #batch_size x token
-                                        bos_token_id)
-                    return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
-                else:
-                    text = tokenizer.decode([bos_token_id])[0] + ''.join(text)
-                    # print(text)
-                    tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
-                    return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
-                            'labels': tokenized_text.input_ids.squeeze()}
+        
                     
                     
         class CustomDataCollator(DataCollatorForTokenClassification):
@@ -436,7 +438,6 @@ elif not args.great:
                     
 
         text_data = data.apply(row_to_col_sentences, axis=1).tolist()
-        do_moe_format = args.moe or args.mh
         dataset = TextDataset(text_data, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format,)
         
         text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
@@ -482,7 +483,17 @@ elif not args.great:
                 param.data.copy_(sd[name])
         
     if args.validation:
-        raise NotImplementedError()
+        text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
+        valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
+        targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=False, save_steps=5000,
+                                  per_device_train_batch_size=1, per_device_eval_batch_size=1, 
+                                  learning_rate=args.lr, num_train_epochs=args.epochs,
+                                  load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
+                                  save_total_limit = 1, metric_for_best_model='eval_loss', bf16=args.efficient, 
+                                  ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+        trainer = Trainer(model, targs, train_dataset=valdataset, eval_dataset=valdataset)
+        valresult = trainer.evaluate(valdataset)
+        print('valresult', valresult)
 
     if args.n_samples > 0:
         from transformers.utils import logging
