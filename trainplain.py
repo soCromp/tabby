@@ -3,7 +3,7 @@ os.environ['TRANSFORMERS_CACHE'] = './cache/'
 import transformers
 from torch import nn
 import torch
-from be_great.multihead_models import MOEModelForCausalLM
+from src.tabby import MOEModelForCausalLM
 import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -17,9 +17,9 @@ from tqdm import tqdm
 import argparse
 import datetime
 import json
-from be_great import GReaT
-from be_great.great_dataset import GReaTDataset, GReaTDataCollator
-from be_great.great_trainer import GReaTTrainer
+from src import GReaT
+from src.great_dataset import GReaTDataset, GReaTDataCollator
+from src.great_trainer import GReaTTrainer
 import re
 from shutil import copy
 from sklearn import preprocessing, pipeline, ensemble, compose
