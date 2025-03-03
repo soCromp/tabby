@@ -1,3 +1,4 @@
+# Tabby: Tabular Data Synthesis with Language Models
 **Use a pre-trained LLM to generate high-fidelity tabular data!**
 
 <p align="center">
