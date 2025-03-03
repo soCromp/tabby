@@ -1,13 +1,13 @@
+**Use a pre-trained LLM to generate high-fidelity tabular data!**
+
 <p align="center">
     <img src="imgs/logo3.png" alt="logo" width="50%"/>
 </p>
 
-**Use a pre-trained LLM to generate high-fidelity tabular data!**
-
 Quick links:
-- Paper: [link]
-- Demo: [link]
-- Model Checkpoint on HuggingFace: [link]
+📄 Paper: [arXiv](link)
+🐈 Demo: [demo.ipynb](https://github.com/soCromp/tabby/blob/main/demo.ipynb)
+🤗 Model Checkpoint on HuggingFace: [sonicc/tabby-distilgpt2-diabetes](https://huggingface.co/sonicc/tabby-distilgpt2-diabetes)
 
 ## Quick start
 
@@ -26,7 +26,7 @@ pip install transformers==4.44.2 accelerate datasets ucimlrepo openml bitsandbyt
 
 ### Demo
 
-We have created the `demo.ipynb` notebook as a quick and easy way to try out Tabby synthesis, no fine-tuning required!
+We have created the [`demo.ipynb`]((https://github.com/soCromp/tabby/blob/main/demo.ipynb)) notebook as a quick and easy way to try out Tabby synthesis, no fine-tuning required!
 
 ### Working with Tabby
 
