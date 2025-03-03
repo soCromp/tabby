@@ -5,6 +5,8 @@
     <img src="imgs/logo3.png" alt="logo" width="50%"/>
 </p>
 
+
+🧠 [Blog Post](link)<br>
 📄 [Paper](link) <br>
 🐈 [Demo notebook](https://github.com/soCromp/tabby/blob/main/demo.ipynb) <br>
 🤗 [HuggingFace: sonicc/tabby-distilgpt2-diabetes](https://huggingface.co/sonicc/tabby-distilgpt2-diabetes) <br>
