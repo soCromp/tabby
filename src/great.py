@@ -138,7 +138,6 @@ class GReaT:
                 r=1,  
                 lora_alpha=256,
                 target_modules=['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'down_proj', 'up_proj', 
-                                #'lm_head.layers.0', 'lm_head.layers.1','lm_head.layers.2', 'lm_head.layers.3', 'lm_head.layers.4', 'lm_head.layers.5'
                                 ],
                 lora_dropout=0.05,
                 bias="none",
@@ -242,8 +241,6 @@ class GReaT:
         # Start training
         logging.info("Start training...")
         great_trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-        #if self.efficient_finetuning_func is not None:
-        #   self.model = self.model.merge_and_unload()
         return great_trainer
 
     def sample(
@@ -287,11 +284,7 @@ class GReaT:
             assert len(expert_indices) == len(self.columns) and set(expert_indices) == set(list(range(len(self.columns))))
             column_names_tokens = self.tokenizer(self.columns, add_special_tokens=False).input_ids
             self.model.set_generation_mode(None, column_names_tokens) # generate columns in random order
-            # self.model.set_generation_mode(expert_indices, column_names_tokens) # generate columns in fixed order
-            # print(self.columns)
-
-        # Move model to device
-        # self.model.to(device)
+        
 
         # Init list for generated DataFrames
         gen = []
@@ -319,7 +312,6 @@ class GReaT:
             already_generated = len(gen)
             
         self.model.cpu() 
-        # print(gen)
         return gen
 
     def great_sample(
@@ -345,7 +337,6 @@ class GReaT:
          Returns:
             Pandas DataFrame with synthetic data generated based on starting_prompts
         """
-        # ToDo: Add n_samples argument to generate more samples for one conditional input.
 
         self.model.to(device)
         starting_prompts = (
@@ -369,7 +360,6 @@ class GReaT:
                 max_length=max_length,
                 do_sample=True,
                 temperature=temperature,
-                # pad_token_id=50256,
             )
             generated_data.append(torch.squeeze(gen).cpu())
 
@@ -414,7 +404,6 @@ class GReaT:
 
         self.model.to(device)
 
-        # start_token = torch.tensor(_pad_tokens(self.tokenizer(starting_prompts)["input_ids"])).to(device)
         index = 0
         df_list = []
         with tqdm(total=len(df_miss)) as pbar:
@@ -425,7 +414,6 @@ class GReaT:
                 org_index = df_curr.index  # Keep index in new DataFrame
                 while not is_complete:
                     num_attrs_missing = pd.isna(df_curr).sum().sum()
-                    # print("Number of missing values: ",  num_attrs_missing)
                     # Generate text promt from current features.
                     starting_prompts = _partial_df_to_promts(df_curr)
                     df_curr = self.great_sample(
@@ -483,9 +471,6 @@ class GReaT:
 
             json.dump(attributes, f)
             
-        #if self.efficient_finetuning == "lora":
-        #    self.model = self.model.merge_and_unload()
-            
         print(self.model)
 
         # Save model weights
@@ -541,7 +526,6 @@ class GReaT:
 
 
         # Load model weights
-        # great.model.load_state_dict(torch.load(path + "/model.pt", map_location="cpu"))
         if model is None:
             # Create new be_great model instance
             great = cls(attributes["llm"], create_model=True)

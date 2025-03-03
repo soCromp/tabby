@@ -35,7 +35,7 @@ class GReaTTrainer(Trainer):
         data_collator = self.data_collator
         train_dataset = (
             self.train_dataset
-        )  # self._remove_unused_columns(self.train_dataset, description="training")
+        )  
         train_sampler = self._get_train_sampler()
 
         return DataLoader(
@@ -59,7 +59,7 @@ class GReaTTrainer(Trainer):
         data_collator = self.data_collator
         eval_dataset = (
             dataset
-        )  # self._remove_unused_columns(self.train_dataset, description="training")
+        )  
         eval_sampler = self._get_eval_sampler(dataset)
 
         return DataLoader(
