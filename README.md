@@ -4,10 +4,10 @@
     <img src="imgs/logo3.png" alt="logo" width="50%"/>
 </p>
 
-Quick links:
-📄 Paper: [arXiv](link)
-🐈 Demo: [demo.ipynb](https://github.com/soCromp/tabby/blob/main/demo.ipynb)
-🤗 Model Checkpoint on HuggingFace: [sonicc/tabby-distilgpt2-diabetes](https://huggingface.co/sonicc/tabby-distilgpt2-diabetes)
+Quick links: <br>
+📄 Paper: [arXiv](link) <br>
+🐈 Demo: [demo.ipynb](https://github.com/soCromp/tabby/blob/main/demo.ipynb) <br>
+🤗 Model Checkpoint on HuggingFace: [sonicc/tabby-distilgpt2-diabetes](https://huggingface.co/sonicc/tabby-distilgpt2-diabetes) <br>
 
 ## Quick start
 
