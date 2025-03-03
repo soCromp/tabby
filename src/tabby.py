@@ -56,6 +56,10 @@ class MHTabbyGPT2Config(GPT2Config):
     
 class MHTabbyGPT2(GPT2LMHeadModel):
     # demo only works with gpt2 and dgpt2
+    # Our usual Tabby model class, MOEModelForCausalLM, is dynamically typed to inherit
+    # properties from whichever base model you use. However, Huggingface does not support
+    # sharing models with complex class structures like dynamic inheritance. So, we create
+    # the MHTabbyGPT2 class, which is not dynamically typed, just to allow demo portability
     config_class = MHTabbyGPT2Config
     
     def __init__(self, config):
@@ -74,9 +78,6 @@ class MHTabbyGPT2(GPT2LMHeadModel):
         self.lm_head = MultiLayer.from_other(
             head_like, self.col, self.num_experts
         )
-        # self.lm_head = nn.ModuleList([
-        #     nn.Linear(config.hidden_size, self.EOC+1, bias=False) for _ in range(self.num_experts)
-        # ])
         
         
     def from_other(model, pad, eoc, num_experts=1, moe=False, multihead=False):
@@ -285,12 +286,10 @@ class MHTabbyGPT2(GPT2LMHeadModel):
             token_heads = list(range(len(self.column_names_tokens)-1))
             shuffle(token_heads)
             token_heads = [len(self.column_names_tokens)-1] + token_heads
-            # print(token_heads)
         else:
             token_heads = self.token_heads
             
         self.col.value = token_heads[expert]
-        # print(self.col.value)
         logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
         stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
         if max_length is not None:
@@ -455,7 +454,6 @@ def MOEModelForCausalLM(model, **kwargs):
             
         def from_other(model, pad, eoc, num_experts=1, moe=False, multihead=False, ma=False):
             # https://stackoverflow.com/questions/597199/converting-an-object-into-a-subclass-in-python
-            # moemodel = deepcopy(model)
             modeltype = type(model)
             moemodel = model
             moemodel.__class__ = MOEModelForCausalLM
@@ -474,7 +472,6 @@ def MOEModelForCausalLM(model, **kwargs):
                             moemodel.transformer.h[i].attn = MultiLayer.from_other(
                                 moemodel.transformer.h[i].attn, moemodel.col, moemodel.num_experts)
                 elif modeltype == LlamaForCausalLM:
-                    # moemodel = deepcopy(model)
                     print('deep copied model')
                     moemodel.__class__ = MOEModelForCausalLM
                     for i in range(len(moemodel.model.layers)):
@@ -683,12 +680,10 @@ def MOEModelForCausalLM(model, **kwargs):
                 token_heads = list(range(len(self.column_names_tokens)-1))
                 shuffle(token_heads)
                 token_heads = [len(self.column_names_tokens)-1] + token_heads
-                # print(token_heads)
             else:
                 token_heads = self.token_heads
                 
             self.col.value = token_heads[expert]
-            # print(self.col.value)
             logits_processor = logits_processor if logits_processor is not None else LogitsProcessorList()
             stopping_criteria = stopping_criteria if stopping_criteria is not None else StoppingCriteriaList()
             if max_length is not None:
@@ -744,10 +739,7 @@ def MOEModelForCausalLM(model, **kwargs):
             insert_column_name = False
             column_names_tokens = deepcopy(self.column_names_tokens) # since we're popping and don't want to change original
             
-            # print(self.PAD, self.EOC, pad_token_id, eoc_token_id)
-            
             while self._has_unfinished_sequences(this_peer_finished, synced_gpus, device=input_ids.device):
-                # print('self.col.value', self.col.value)
                 # prepare model inputs
                 model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -789,27 +781,18 @@ def MOEModelForCausalLM(model, **kwargs):
 
                 # choose next tokens (sample/argmax)
                 next_tokens = select_next_token(next_token_scores)
-                # print(input_ids[..., -1].item())
                 if input_ids[..., -1].item() == self.EOC and expert < self.num_experts-1:
                     expert += 1
                     self.col.value = token_heads[expert]
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) > 0: # more tokens to keep inserting
                         insert_column_name = True 
-                    # print('to expert', self.col.value, 'input ids shape', input_ids.shape)
                 elif insert_column_name:
                     next_tokens = torch.full_like(next_tokens, column_names_tokens[self.col.value].pop(0))
                     if len(column_names_tokens[self.col.value]) == 0: # inserted this whole column name
                         insert_column_name = False
                 elif input_ids[..., -1].item() == self.EOC and expert == self.num_experts-1: # this line is done
-                    # print('done with line', 'input ids shape', input_ids.shape)
                     break
-
-                # finished sentences should have their next token be a padding token
-                # if eoc_token_id is not None:
-                #     if pad_token_id is None:
-                #         raise ValueError("If `eoc_token_id` is defined, make sure that `pad_token_id` is defined.")
-                #     next_tokens = next_tokens * unfinished_sequences + pad_token_id * (1 - unfinished_sequences)
 
                 # update generated ids, model inputs, and length for next step
                 input_ids = torch.cat([input_ids, next_tokens[:, None]], dim=-1)
@@ -820,15 +803,6 @@ def MOEModelForCausalLM(model, **kwargs):
                     model_kwargs,
                     is_encoder_decoder=self.config.is_encoder_decoder,
                 )
-
-                # if eoc_token was found in one sentence, set sentence to finished
-                # if eoc_token_id_tensor is not None:
-                #     unfinished_sequences = unfinished_sequences.mul(
-                #         next_tokens.tile(eoc_token_id_tensor.shape[0], 1).ne(eoc_token_id_tensor.unsqueeze(1)).prod(dim=0)
-                #     )
-
-                # unfinished_sequences = unfinished_sequences & ~stopping_criteria(input_ids, scores)
-                # this_peer_finished = unfinished_sequences.max() == 0
 
             if streamer is not None:
                 streamer.end()

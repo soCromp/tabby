@@ -17,8 +17,8 @@ Follow the instructions below to install the necessary packages, then try things
 Run the following:
 
 ```python
-conda create --name env python=3.11.4
-conda activate env
+conda create --name tabby python=3.11.4
+conda activate tabby
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 conda install tqdm matplotlib jupyter pandas scikit-learn jupyter
 pip install transformers==4.44.2 accelerate datasets ucimlrepo openml bitsandbytes wandb openpyxl huggingface_hub

@@ -51,12 +51,6 @@ parser.add_argument('-r', '--pre', action='store_true',
                     default=False, help='whether to use the pRetrained (distilled) gpt2 tabular model from TapTap')
 parser.add_argument('-c', '--ec', action='store_true',
                     default=False, help='whether to Encode the Categorical columns à la Tabula')
-# parser.add_argument('-l8', '--llama8', action='store_true',
-#                     default=False, help='use llama3 8B')
-# parser.add_argument('-l1', '--llama1', action='store_true',
-#                     default=False, help='use llama3.2 1B')
-# parser.add_argument('-gpt2', '--gpt2', action='store_true',
-#                     default=False, help='use non-distilled GPT2')
 parser.add_argument('-b', '--base', help='base model to use: gpt2, dgpt2, l3-8, 13.2-1, p410b (for pythia 410b), etc',
                     default='dgpt2')
 parser.add_argument('-lora', '--lora', action='store_true',
@@ -139,17 +133,6 @@ if os.path.exists('./accesstoken.txt'):
     accesstoken = accesstoken.split(' ')[-1][:-1]
 else:
     accesstoken = None
-    
-# if args.pre:
-#     modelname = 'ztphs980/taptap-distill'
-# elif args.llama8:
-#     modelname = 'meta-llama/Meta-Llama-3-8B'
-# elif args.llama1:
-#     modelname = 'meta-llama/Llama-3.2-1B'
-# elif args.gpt2:
-#     modelname = 'gpt2'
-# else:
-#     modelname = 'distilgpt2'
     
 modelnames = {'dgpt2':'distilgpt2', 'gpt2':'gpt2', 'l3.2-1b':'meta-llama/Llama-3.2-1B',
               'l3-8b':'meta-llama/Meta-Llama-3-8B', }
@@ -252,14 +235,11 @@ def parse(raws, args, file_path, outpath):
     
     def parse_line(l):
         entries = l[:-1].split('<EOC>') # remove newline at end
-        # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
-        # print(words)
         d = dict()
         for c in words:
             if c[0] in cols and len(c) == 3 and c[0] not in d: # keep only first occurence
                 d[c[0]] = c[2]
-        # d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
 
         if set(d.keys()) == cols:
             return d 
@@ -330,7 +310,6 @@ elif not args.great:
         model = transformers.AutoModelForCausalLM.from_pretrained(modelname, device_map={"": PartialState().process_index},
                                                                   quantization_config=quantization_config)
     model.resize_token_embeddings(len(tokenizer))
-    # device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     
     if args.moe or args.mh or args.ma:
         num_experts = len(data.columns)
@@ -390,7 +369,6 @@ elif not args.great:
                     return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
                 else:
                     text = tokenizer.bos_token + ''.join(text)
-                    # print(text)
                     tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
                     return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                             'labels': tokenized_text.input_ids.squeeze()}
@@ -454,10 +432,7 @@ elif not args.great:
         if ('llama' in modelname) and (args.moe or args.mh or args.ma):
             startind=2
         for i in tqdm(range(0, args.n_samples, sbs)):
-            
-            toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000,#dataconfig['max_col_length']*len(dataconfig['cols']), 
-                                # pad_token_id=tokenizer.eos_token_id
-                                )[...,startind:] # remove BOS token
+            toks = model.generate(inputs, do_sample=True, num_beams=1, max_length=1000)[...,startind:] # remove BOS token
             outs = tokenizer.batch_decode(toks)
             samples.extend(outs)
             if len(samples)%100 == 0:
@@ -543,10 +518,6 @@ else: #use great
                                       max_length=max_length)
         synthetic_data = [l+'\n' for l in synthetic_data] #add newlines
 
-        # if not args.moe:
-        #     with open(os.path.join(outpath, 'samplesclean.csv'), 'w') as f: # pre-parsed
-        #         f.writelines(synthetic_data)
-        # else:
         with open(os.path.join(outpath, 'samples.txt'), 'w') as f: # not pre-parsed
             f.writelines(synthetic_data)
             
