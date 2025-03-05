@@ -7,7 +7,7 @@
 
 
 🧠 [Blog Post](link)<br>
-📄 [Paper](link) <br>
+📄 [Paper](https://arxiv.org/abs/2503.02152) <br>
 🐈 [Demo notebook](https://github.com/soCromp/tabby/blob/main/demo.ipynb) <br>
 🤗 [HuggingFace: sonicc/tabby-distilgpt2-diabetes](https://huggingface.co/sonicc/tabby-distilgpt2-diabetes) <br>
 
