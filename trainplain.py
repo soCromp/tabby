@@ -98,8 +98,12 @@ if (args.train or args.valtrain) and args.dataset == None:
 # Load the dataset (needed even just for sampling, to get column names)
 if not (args.train or args.valtrain) and args.dataset == None:
     # load version of dataset that the pre-existing model was trained on
-    with open(os.path.join(args.path, 'dataconfig.json'), 'r') as f:
-        dataconfig = json.load(f)
+    try:
+        with open(os.path.join(args.path, 'dataconfig.json'), 'r') as f:
+            dataconfig = json.load(f)
+    except:
+        with open(os.path.join(args.path, '../dataconfig.json'), 'r') as f:
+            dataconfig = json.load(f)
     version = '.'.join(dataconfig['creation_time'].split(' '))
     file_path = f'./data/{dataconfig["dataset_name"]}/{version}'
     print(file_path)
@@ -275,8 +279,12 @@ def parse(raws, args, file_path, outpath):
         return
     df = pd.DataFrame.from_records(line_dicts)
 
-    with open(os.path.join(file_path, 'config.json'), 'r') as f:
-        dataconfig = json.load(f)
+    try:
+        with open(os.path.join(file_path, 'config.json'), 'r') as f:
+            dataconfig = json.load(f)
+    except:
+        with open(os.path.join(file_path, '../config.json'), 'r') as f:
+            dataconfig = json.load(f)
     ords = dataconfig['ords']
 
     ordvals = {col:set(real[col].unique()) for col in ords}
