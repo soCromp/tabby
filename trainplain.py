@@ -448,7 +448,8 @@ elif not args.great:
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, num_train_epochs=args.epochs,
                                   load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
-                                  save_total_limit = 1, metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+                                #   save_total_limit = 1, 
+                                  metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
                                   callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
@@ -464,23 +465,27 @@ elif not args.great:
         pd.DataFrame(trainer.state.log_history).to_csv(os.path.join(outpath, 'losses.csv'))
     
     if not args.train and not args.valtrain: # load in checkpoint so we can validate or sample
-        checkpoints = [
-            d for d in os.listdir(outpath)
-            if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
-        ]
-        if len(checkpoints) > 0:
-            most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
-            print('loading from checkpoint directory', most_recent)
-            model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
-        else:
-            ckpt_path = os.path.join(outpath, 'model.pt')
-            print('loading from', ckpt_path)
-            if args.efficient:
-                model = efficient_finetuning_func(model)
-                print(model)
-            sd = torch.load(ckpt_path)
-            for name, param in model.named_parameters():
-                param.data.copy_(sd[name])
+        if 'checkpoint-' in outpath:
+            print('loading from checkpoint directory', outpath)
+            model = PeftModel.from_pretrained(model, outpath)
+        else: # load most recent ckpt
+            checkpoints = [
+                d for d in os.listdir(outpath)
+                if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
+            ]
+            if len(checkpoints) > 0:
+                most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
+                print('loading from checkpoint directory', most_recent)
+                model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
+            else: # fall back to loading from model.pt
+                ckpt_path = os.path.join(outpath, 'model.pt')
+                print('loading from', ckpt_path)
+                if args.efficient:
+                    model = efficient_finetuning_func(model)
+                    print(model)
+                sd = torch.load(ckpt_path)
+                for name, param in model.named_parameters():
+                    param.data.copy_(sd[name])
         
     if args.validation:
         text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
@@ -512,8 +517,8 @@ elif not args.great:
             sbs = min(10, args.n_samples)
 
         inputs = torch.full((sbs, 1), bos_token_id).to(model.device)
-        if args.llama1 or args.llama8:
-            inputs = tokenizer(sbs*[';'], return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
+        # if args.llama1 or args.llama8:
+        #     inputs = tokenizer(sbs*[';'], return_tensors='pt')['input_ids'].cuda()#.unsqueeze(0)
 
         samples = []
         startind = 0 # remove BOS token
