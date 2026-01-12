@@ -1,4 +1,4 @@
-# Tabby: Tabular Data Synthesis with Language Models
+# Tabby: A Language Model Architecture for Tabular and Structured Data Synthesis
 **Use a pre-trained LLM to generate high-fidelity tabular data!**
 
 <p align="center">
@@ -51,12 +51,14 @@ Credit: Some code in the `src` directory is from the [Great](https://github.com/
 If you use Tabby, please cite:
 
 ```bibtex
-@article{cromp2025tabby,
-  title={Tabby: Tabular Data Synthesis with Language Models},
-  author={Sonia Cromp, Satya Sai Srinath Namburi GNVV, Mohammed Alkhudhayri, Catherine Cao, Samuel Guo, Nicholas Roberts, Frederic Sala},
-  journal={arXiv preprint arXiv:2405.01147},
-  year={2025},
-  url={https://arxiv.org/abs/2405.01147}
+@misc{cromp2026tabbylanguagemodelarchitecture,
+  title={Tabby: A Language Model Architecture for Tabular and Structured Data Synthesis},
+  author={Sonia Cromp and Satya Sai Srinath Namburi GNVV and Mohammed Alkhudhayri and Catherine Cao and Samuel Guo and Nicholas Roberts and Frederic Sala},
+  year={2026},
+  eprint={2503.02152},
+  archivePrefix={arXiv},
+  primaryClass={cs.LG},
+  url={https://arxiv.org/abs/2503.02152},
 }
 ```
 
