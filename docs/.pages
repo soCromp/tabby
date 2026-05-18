@@ -1,7 +1,0 @@
-title: Home
-nav:
-    - Home: index.md
-    - Getting Started: getting_started.md
-    - About: about.md
-    - api-docs
-    - examples
