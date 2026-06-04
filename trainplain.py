@@ -27,6 +27,11 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, Ta
 from accelerate import PartialState
 os.environ["WANDB_DISABLED"] = 'true'
 
+import sys
+# Add the parent directory to sys.path so we can import handler.py
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from handler import UnifiedDataLoader 
+
     
 parser = argparse.ArgumentParser(
                     prog='Train-Plain',
@@ -75,10 +80,19 @@ parser.add_argument('-local', '--local', action='store_true', default=False,
 args = parser.parse_args()
 print(args)
 
+loader = UnifiedDataLoader(dataset_name=args.dataset, target_model_type="tabby")
+# Assuming your loader has a method to get the combined or training dataframe
+meta = loader.get_metadata()
+loader.get_train_data() 
+loader.get_test_data() 
+loader.get_val_data() 
+loader.get_all_data() 
+
 now = datetime.datetime.now()
 if args.path == None:
     import socket 
-    drivedict = {'brandy_old_fashioned':'/mnt/data/sonia'}
+    drivedict = {'brandy_old_fashioned':'/mnt/data/sonia',
+                 'mai-tai':'/mnt/data/sonia'}
     drive = drivedict.get(socket.gethostname(), '.')
     tiny = '-tiny' if args.valtrain else ''
     great = 'great' if args.great else 'plain'
