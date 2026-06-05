@@ -8,3 +8,6 @@ __pycache__
 
 examples/iris*
 examples/trainer_*
+
+cache/
+data/
