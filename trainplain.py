@@ -495,7 +495,7 @@ elif not args.great:
                 d for d in os.listdir(outpath)
                 if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
             ]
-            if len(checkpoints) > 0:
+            if len(checkpoints) > 0 and args.efficient:
                 most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
                 print('loading from checkpoint directory', most_recent)
                 model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
