@@ -161,12 +161,12 @@ if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama8:
     if args.local:
-        modelname = '/staging/cromp/weights/meta-llama/Meta-Llama-3-8B'
+        modelname = '/mnt/data/zoo/meta-llama/Meta-Llama-3-8B'
     else:
         modelname = 'meta-llama/Meta-Llama-3-8B'
 elif args.llama1:
     if args.local:
-        modelname = '/staging/cromp/weights/meta-llama/Llama-3.2-1B'
+        modelname = '/mnt/data/zoo/meta-llama/Llama-3.2-1B'
     else:
         modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
@@ -506,6 +506,7 @@ elif not args.great:
                     model = efficient_finetuning_func(model)
                     print(model)
                 sd = torch.load(ckpt_path)
+                print(sd.keys())
                 for name, param in model.named_parameters():
                     param.data.copy_(sd[name])
         
