@@ -73,6 +73,8 @@ parser.add_argument('-validation', '--validation', action='store_true',
                     help='just run the validation- for debugging purposes')
 parser.add_argument('-resume', '--resume', action='store_true', default=False,
                     help='resume training run')
+parser.add_argument('-steps', '--steps', type=int,
+                    default=None, help='number of steps to train (overrides epochs if provided)')
 parser.add_argument('-e', '--epochs', type=int,
                     default=50, help='number of epochs to train')
 parser.add_argument('-local', '--local', action='store_true', default=False,
@@ -254,40 +256,63 @@ def parse(raws, args, file_path, outpath):
     
     def parse_line(l):
         entries = l.split(';') # remove newline at end
-        # print(entries)
         words = [c.split(' ') for c in entries] #'name', 'is', 'value'
-        # print(words)
         d = dict()
         for c in words:
-            if c[0] in cols and len(c) == 3 and c[0] not in d: # keep only first occurence
+            if c[0] in cols and len(c) >= 3 and c[0] not in d: # keep only first occurence
+                c[2] = ' '.join(c[2:])
                 d[c[0]] = c[2]
-        # d = {c[0]:c[2] for c in words if len(c)==3 and c[0] in cols}
-        # print(d)
-        # print(set(d.keys()), cols)
+
 
         if set(d.keys()) == cols:
-            # print('success')
             return d 
         else:
             return None
 
-    if raws[0].startswith('<|begin_of_text|>;'): # i.e. llama plain
-        cliplen = len('<|begin_of_text|>;')
-        raws = [raw[cliplen:] for raw in raws]
-    elif raws[0].startswith('<|begin_of_text|>'): # i.e. llama great
-        cliplen = len('<|begin_of_text|>')
-        raws = [raw[cliplen:] for raw in raws]
-    elif raws[0].startswith('<|begin_of_text|>;'): # i.e. non-llama plain
-        cliplen = 1
-        raws = [raw[cliplen:] for raw in raws]
-    # print(raws[0])
+    # if raws[0].startswith('<|begin_of_text|>;'): # i.e. llama plain
+    #     cliplen = len('<|begin_of_text|>;')
+    #     raws = [raw[cliplen:] for raw in raws]
+    # elif raws[0].startswith('<|begin_of_text|>'): # i.e. llama great
+    #     cliplen = len('<|begin_of_text|>')
+    #     raws = [raw[cliplen:] for raw in raws]
+    # elif raws[0].startswith('<|begin_of_text|>;'): # i.e. non-llama plain
+    #     cliplen = 1
+    #     raws = [raw[cliplen:] for raw in raws]
     
     if raws[0].endswith('\n'):
         raws = [raw[:-1] for raw in raws]
         
-    line_dicts = [parse_line(l) for l in raws]
-    line_dicts = [l for l in line_dicts if l is not None]
-    print(len(raws)-len(line_dicts), 'problem lines')
+    raws = '\n'.join(raws)
+        
+    # line_dicts = [parse_line(l) for l in raws]
+    # line_dicts = [l for l in line_dicts if l is not None]
+    
+    events = re.split(rf'\n?(?=;{real.columns[0]} is )', raws.strip())
+    pattern = re.compile(r';(?P<key>\w+) is (?P<value>.*?)(?=;\w+ is |$)', re.DOTALL)
+    line_dicts = []
+    for event in events:
+        if not event.strip():
+            continue
+            
+        event_dict = {}
+        
+        # Find all key-value pairs in this specific event
+        for match in pattern.finditer(event):
+            key = match.group('key')
+            value = match.group('value').strip()
+            
+            # Clean up the trailing semicolon on the very last value (like 'md5 is nan;')
+            if value.endswith(';'):
+                value = value[:-1]
+                
+            event_dict[key] = value
+            
+        if event_dict:
+            line_dicts.append(event_dict)
+            
+    
+    # print(len(raws)-len(line_dicts), 'problem lines')
+    print(len(line_dicts), 'parseable lines')
     if len(line_dicts) == 0:
         print('did not successfully parse samples. returning')
         return
@@ -404,21 +429,44 @@ elif not args.great:
             return len(self.texts)
 
         def __getitem__(self, idx):
+            # Extract the raw dataframe row instead of generating the full strings immediately
             if self.cols is None:
-                text = row_to_col_sentences(data.iloc[idx])
+                row = data.iloc[idx]
             else:
-                text = row_to_col_sentences(data[self.cols].iloc[idx]) # ['age is 39', 'workclass is State-gov', ...]
+                row = data[self.cols].iloc[idx]
+
             if self.do_moe_format:
-                # print(text)
-                tokenized_text = self.tokenizer(text, truncation=True, max_length=self.max_col_length, padding='max_length', return_tensors="pt",
-                                                add_special_tokens=False)
-                prompt = torch.full((1,), #batch_size x token
-                                    bos_token_id)
-                return {'input_ids': prompt, 'labels': tokenized_text.input_ids.squeeze()}
+                col_names = [str(col).strip() for col in row.index]
+                val_strings = [" is " + str(val).strip() + ";" for val in row.values]
+                
+                # 1. Tokenize column names and values SEPARATELY to enforce the token boundary
+                col_tokens = self.tokenizer(col_names, add_special_tokens=False).input_ids
+                val_tokens = self.tokenizer(val_strings, add_special_tokens=False).input_ids
+                
+                padded_ids = []
+                for c, v in zip(col_tokens, val_tokens):
+                    # 2. Concatenate the token IDs to match the generation phase exactly
+                    seq = c + v 
+                    
+                    # 3. Truncate to max_col_length
+                    seq = seq[:self.max_col_length]
+                    
+                    # 4. Pad to max_col_length
+                    pad_len = self.max_col_length - len(seq)
+                    if pad_len > 0:
+                        seq = seq + [self.tokenizer.pad_token_id] * pad_len
+                        
+                    padded_ids.append(seq)
+                    
+                labels = torch.tensor(padded_ids)
+                prompt = torch.full((1,), bos_token_id)
+                
+                return {'input_ids': prompt, 'labels': labels}
             else:
-                text = tokenizer.decode([bos_token_id])[0] + ''.join(text)
-                # print(text)
-                tokenized_text = self.tokenizer(text, truncation=True, padding='longest', return_tensors='pt')
+                # Fallback for plain non-MOE format
+                text = row_to_col_sentences(row)
+                text_str = self.tokenizer.decode([bos_token_id])[0] + ''.join(text)
+                tokenized_text = self.tokenizer(text_str, truncation=True, padding='longest', return_tensors='pt')
                 return {'input_ids': tokenized_text.input_ids.squeeze(), 'attention_mask': tokenized_text.attention_mask.squeeze(),
                         'labels': tokenized_text.input_ids.squeeze()}
     
@@ -465,15 +513,17 @@ elif not args.great:
         text_valdata = valdata.apply(row_to_col_sentences, axis=1).tolist()
         valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         
-        
+        epochs = args.epochs
+        if args.steps is not None:
+            epochs = args.epochs
         targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
-                                  learning_rate=args.lr, num_train_epochs=args.epochs,
-                                  load_best_model_at_end = True, evaluation_strategy='steps', eval_steps=5000,
+                                  learning_rate=args.lr, max_steps=args.steps, num_train_epochs=epochs,
+                                  load_best_model_at_end = False, evaluation_strategy='steps', eval_steps=10000,
                                 #   save_total_limit = 1, 
                                   metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
         trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
-                                  callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
+        )#callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
 
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
@@ -496,7 +546,7 @@ elif not args.great:
                 if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
             ]
             if len(checkpoints) > 0 and args.efficient:
-                most_recent = max(checkpoints, key=lambda name: int(name.split("-")[-1]))
+                most_recent = 'checkpoint-5000' #max(checkpoints, key=lambda name: int(name.split("-")[-1]))
                 print('loading from checkpoint directory', most_recent)
                 model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
             else: # fall back to loading from model.pt
