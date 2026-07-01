@@ -313,6 +313,7 @@ def parse(raws, args, file_path, outpath):
     
     # print(len(raws)-len(line_dicts), 'problem lines')
     print(len(line_dicts), 'parseable lines')
+    print(line_dicts)
     if len(line_dicts) == 0:
         print('did not successfully parse samples. returning')
         return
@@ -334,7 +335,12 @@ def parse(raws, args, file_path, outpath):
         df = decode_categorical_columns(df, label_encoder_list)
     else:
         for col in ordvals:
-            df = df[df[col].isin(ordvals[col])]
+            print(df[col].unique(), ordvals[col])
+            try: # maybe it's ordinal with classes like 1 and -1. LLM may have seen 1.0 and -1.0
+                df[col] = df[col].astype(float)
+                df = df[df[col].isin([int(val) for val in ordvals[col]])]
+            except:
+                df = df[df[col].isin(ordvals[col])]
             print(col, len(df))
             if len(df) == 0:
                 print('did not successfully parse samples. returning')
