@@ -286,9 +286,10 @@ def parse(raws, args, file_path, outpath):
         
     # line_dicts = [parse_line(l) for l in raws]
     # line_dicts = [l for l in line_dicts if l is not None]
+    print(real.columns[0])
     
-    events = re.split(rf'\n?(?=;{real.columns[0]} is )', raws.strip())
-    pattern = re.compile(r';(?P<key>\w+) is (?P<value>.*?)(?=;\w+ is |$)', re.DOTALL)
+    events = re.split(rf'\n?(?=;{real.columns[0]} is )', raws.strip()) # seperates different rows
+    pattern = re.compile(r';(?P<key>.*?) is (?P<value>.*?)(?=;.*? is |$)', re.DOTALL)
     line_dicts = []
     for event in events:
         if not event.strip():
