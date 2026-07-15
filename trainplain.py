@@ -74,7 +74,7 @@ parser.add_argument('-validation', '--validation', action='store_true',
 parser.add_argument('-resume', '--resume', action='store_true', default=False,
                     help='resume training run')
 parser.add_argument('-steps', '--steps', type=int,
-                    default=None, help='number of steps to train (overrides epochs if provided)')
+                    default=-1, help='number of steps to train (overrides epochs if provided)')
 parser.add_argument('-e', '--epochs', type=int,
                     default=50, help='number of epochs to train')
 parser.add_argument('-local', '--local', action='store_true', default=False,
@@ -163,12 +163,12 @@ if args.pre:
     modelname = 'ztphs980/taptap-distill'
 elif args.llama8:
     if args.local:
-        modelname = '/mnt/data/zoo/meta-llama/Meta-Llama-3-8B'
+        modelname = '/staging/c/cromp/zoo/meta-llama/Meta-Llama-3-8B'
     else:
         modelname = 'meta-llama/Meta-Llama-3-8B'
 elif args.llama1:
     if args.local:
-        modelname = '/mnt/data/zoo/meta-llama/Llama-3.2-1B'
+        modelname = '/staging/c/cromp/zoo/meta-llama/Llama-3.2-1B'
     else:
         modelname = 'meta-llama/Llama-3.2-1B'
 elif args.gpt2:
@@ -521,16 +521,19 @@ elif not args.great:
         valdataset = TextDataset(text_valdata, tokenizer, max_col_length=dataconfig['max_col_length'], do_moe_format=do_moe_format)
         
         epochs = args.epochs
-        if args.steps is not None:
+        if args.steps is not None and args.steps > 0:
             epochs = args.epochs
-        targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True, save_steps=5000,
+        else: # steps should be -1 not None
+            args.steps = -1
+        targs = TrainingArguments(output_dir=outpath, overwrite_output_dir=True, do_train=True,
                                   per_device_train_batch_size=1, per_device_eval_batch_size=1, 
                                   learning_rate=args.lr, max_steps=args.steps, num_train_epochs=epochs,
-                                  load_best_model_at_end = False, evaluation_strategy='steps', eval_steps=10000,
-                                #   save_total_limit = 1, 
-                                  metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
-        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset, #data_collator=CustomDataCollator(tokenizer=tokenizer),
-        )#callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
+                                  load_best_model_at_end = True, 
+                                  save_total_limit = 2, evaluation_strategy='epoch', save_strategy='epoch',
+                                  metric_for_best_model='eval_loss', bf16=args.efficient, ddp_find_unused_parameters=False, 
+                                  gradient_checkpointing=False, gradient_checkpointing_kwargs={"use_reentrant": False})
+        trainer = Trainer(model, targs, train_dataset=dataset, eval_dataset=valdataset,
+            callbacks = [EarlyStoppingCallback(early_stopping_threshold=0, early_stopping_patience=2)])
         trainer.train(resume_from_checkpoint=args.resume)
 
         torch.save(model.state_dict(), os.path.join(outpath, f'model.pt'))
