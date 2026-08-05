@@ -339,8 +339,9 @@ def parse(raws, args, file_path, outpath):
             print(df[col].unique(), ordvals[col])
             try: # maybe it's ordinal with classes like 1 and -1. LLM may have seen 1.0 and -1.0
                 df[col] = df[col].astype(float)
-                df = df[df[col].isin([int(val) for val in ordvals[col]])]
+                df = df[df[col].isin([float(val) for val in ordvals[col]])]
             except:
+                df[col] = df[col].astype(str)
                 df = df[df[col].isin(ordvals[col])]
             print(col, len(df))
             if len(df) == 0:
@@ -556,9 +557,20 @@ elif not args.great:
                 if d.startswith("checkpoint-") and os.path.isdir(os.path.join(outpath, d))
             ]
             if len(checkpoints) > 0 and args.efficient:
-                most_recent = 'checkpoint-5000' #max(checkpoints, key=lambda name: int(name.split("-")[-1]))
-                print('loading from checkpoint directory', most_recent)
-                model = PeftModel.from_pretrained(model, os.path.join(outpath, most_recent))
+                from transformers.trainer_utils import get_last_checkpoint
+                from transformers.trainer_callback import TrainerState
+                last_ckpt = get_last_checkpoint(outpath) # full path as-is
+                try:
+                    state_path = os.path.join(last_ckpt, "trainer_state.json")
+                    if os.path.exists(state_path):
+                        state = TrainerState.load_from_json(state_path)
+                        if state.best_model_checkpoint:
+                            ckpt = state.best_model_checkpoint # full path as-is
+                except Exception as e:
+                    print('Error getting best ckpt so falling back to most recent', e)
+                    ckpt = last_ckpt
+                print('loading from checkpoint directory', ckpt)
+                model = PeftModel.from_pretrained(model, ckpt)
             else: # fall back to loading from model.pt
                 ckpt_path = os.path.join(outpath, 'model.pt')
                 print('loading from', ckpt_path)
