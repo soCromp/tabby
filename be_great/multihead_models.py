@@ -404,6 +404,9 @@ def MOEModelForCausalLM(model, **kwargs):
                     model_kwargs,
                     is_encoder_decoder=self.config.is_encoder_decoder,
                 )
+                
+                if stopping_criteria(input_ids, scores):
+                    break
 
                 # if eoc_token was found in one sentence, set sentence to finished
                 # if eoc_token_id_tensor is not None:
